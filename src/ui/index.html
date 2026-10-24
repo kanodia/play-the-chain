@@ -56,34 +56,50 @@
   .banner { background: var(--accent-dim); border: 1px solid rgba(94,242,200,.35); border-radius: 10px;
     padding: 10px 12px; font-size: 14px; margin-top: 12px; }
 
-  /* The on-chain view */
-  .chain { background: linear-gradient(180deg, #121a22, var(--panel)); border-color: #1f3a36; }
-  .steps { list-style: none; margin: 0; padding: 0; position: relative; }
-  .step { position: relative; padding: 0 0 14px 30px; color: var(--muted); }
-  .step:last-child { padding-bottom: 0; }
-  .step::before { content: ""; position: absolute; left: 6px; top: 6px; width: 10px; height: 10px; border-radius: 50%;
-    border: 2px solid var(--line); background: var(--panel2); }
-  .step:not(:last-child)::after { content: ""; position: absolute; left: 11px; top: 20px; bottom: 0; width: 2px; background: var(--line); }
-  .step b { display: block; color: inherit; font-weight: 600; font-size: 14px; }
-  .step small { display: block; font-size: 12.5px; }
-  .step.done { color: var(--text); }
-  .step.done::before { background: var(--accent); border-color: var(--accent); }
-  .step.done::after { background: rgba(94,242,200,.5); }
-  .step.active { color: var(--accent); }
-  .step.active::before { border-color: var(--accent); animation: pulse 1s infinite; }
+  /* The on-chain view: plain words and the technical side, in parallel */
+  .chain { margin-top: 20px; background: linear-gradient(180deg, #121a22, var(--panel)); border-color: #1f3a36; }
+  .chain h2 { margin: 0 0 4px; font-size: 18px; }
+  .chain .sub { color: var(--muted); font-size: 13.5px; margin-bottom: 14px; }
+  .flow { display: grid; grid-template-columns: 22px minmax(0, 1fr) minmax(0, 1fr); column-gap: 18px; }
+  .flow .head { font-size: 12px; text-transform: uppercase; letter-spacing: .08em; color: var(--muted);
+    padding-bottom: 8px; border-bottom: 1px solid var(--line); margin-bottom: 10px; }
+  .flow .head.tech { color: var(--accent); }
+  .dot { position: relative; }
+  .dot::before { content: ""; position: absolute; left: 5px; top: 5px; width: 10px; height: 10px; border-radius: 50%;
+    border: 2px solid var(--line); background: var(--panel2); z-index: 1; }
+  .dot:not(.end)::after { content: ""; position: absolute; left: 10px; top: 19px; bottom: -5px; width: 2px; background: var(--line); }
+  .plain, .tech { padding-bottom: 16px; color: var(--muted); }
+  .plain b { display: block; font-size: 15px; font-weight: 600; margin-bottom: 2px; }
+  .plain span { font-size: 13.5px; }
+  .tech { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; line-height: 1.55;
+    border-left: 2px solid var(--line); padding-left: 12px; overflow-wrap: anywhere; }
+  .tech em { font-style: normal; color: var(--text); }
+  .plain.s-done, .tech.s-done { color: var(--text); }
+  .tech.s-done { border-left-color: rgba(94,242,200,.45); }
+  .s-done.dot::before { background: var(--accent); border-color: var(--accent); }
+  .s-done.dot::after { background: rgba(94,242,200,.5); }
+  .plain.s-active { color: var(--accent); }
+  .s-active.dot::before { border-color: var(--accent); animation: pulse 1s infinite; }
   @keyframes pulse { 0%,100% { box-shadow: 0 0 0 0 rgba(94,242,200,.6); } 50% { box-shadow: 0 0 0 6px rgba(94,242,200,0); } }
-  @media (prefers-reduced-motion: reduce) { .step.active::before { animation: none; } }
-  .mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12.5px; }
-
-  .receipt { margin-top: 14px; border-top: 1px dashed #2d3a44; padding-top: 12px; }
-  .kv { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 6px 14px; font-size: 13.5px; }
+  @media (prefers-reduced-motion: reduce) { .s-active.dot::before { animation: none; } }
+  .receipt { margin-top: 6px; border-top: 1px dashed #2d3a44; padding-top: 14px; }
+  .receipt .flow { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+  .story { font-size: 15px; line-height: 1.6; }
+  .story strong { color: var(--accent); }
+  .kv { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 5px 12px;
+    font: 12px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace; border-left: 2px solid rgba(94,242,200,.45); padding-left: 12px; }
   .kv dt { color: var(--muted); }
-  .kv dd { margin: 0; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
-  .big { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-bottom: 12px; }
-  .big div b { display: block; font-size: 20px; font-variant-numeric: tabular-nums; color: var(--accent); }
-  .big div span { color: var(--muted); font-size: 12px; }
-  .note { color: var(--muted); font-size: 12px; margin-top: 10px; }
-
+  .kv dd { margin: 0; overflow-wrap: anywhere; }
+  .note { color: var(--muted); font-size: 12px; margin-top: 12px; }
+  .mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12.5px; }
+  @media (max-width: 700px) {
+    .flow { grid-template-columns: 22px minmax(0, 1fr); }
+    .flow .head.tech { display: none; }
+    .flow .head.plain-h { grid-column: 2; }
+    .tech { grid-column: 2; margin-top: -10px; }
+    .receipt .flow { grid-template-columns: minmax(0, 1fr); }
+    .receipt .head.tech { display: block; margin-top: 12px; }
+  }
   .moves { display: grid; grid-template-columns: 2.4em 1fr 1fr; gap: 2px 6px; font: 13.5px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace;
     max-height: 210px; overflow: auto; }
   .moves .n { color: var(--muted); }
@@ -123,18 +139,19 @@
         <div id="spectator" class="banner" hidden></div>
       </div>
 
-      <div class="panel chain" aria-live="polite">
-        <div class="label"><span>⛓ On-chain view</span><span id="chain-where" class="mono"></span></div>
-        <ol id="steps" class="steps"></ol>
-        <div id="receipt" class="receipt" hidden></div>
-      </div>
-
       <div class="panel">
         <div class="label"><span>Moves · tap one to replay it and see its receipt</span></div>
         <div id="moves" class="moves"></div>
       </div>
     </div>
   </div>
+  <section class="panel chain" aria-live="polite">
+    <div class="label"><span>⛓ On-chain view</span><span id="chain-where" class="mono"></span></div>
+    <h2>What happens when you move</h2>
+    <div class="sub">Left: what it means. Right: what actually runs, for the technically curious.</div>
+    <div id="steps" class="flow"></div>
+    <div id="receipt" class="receipt" hidden></div>
+  </section>
   <p class="foot">Nothing here runs on a server. The page, the rules and the engine all live in one canister:
     it checks your move, runs a single-threaded Stockfish 11 search inside the 40B-instruction limit of one message,
     and writes both moves to its stable memory. The game record can't be edited afterwards.</p>
@@ -225,18 +242,37 @@ function renderMoves() {
 }
 
 // ---------- the on-chain view ----------
+// Each step: [plain title, plain explanation, technical detail].
 function steps(state, move) {
-  const n = info ? info.nodes : 13, sub = info ? short(info.subnet) : "…";
+  const n = info ? info.nodes : 13, sub = info ? info.subnet : "…", can = info ? info.canister : "…";
+  const id = game ? game.id : "…";
+  const mine = game ? [...game.moves].reverse().find((m) => m.by === "human") : null;
+  const uci = mine ? mine.uci : "e2e4";
   const list = [
-    ["Your move leaves the browser as plain HTTP", `POST /api/game/${game ? game.id : "…"}/move · no wallet, no signature`],
-    ["The IC gateway turns it into an update call", "an update goes through consensus; a normal website would just trust one server"],
-    [`Consensus orders it on subnet ${sub}`, `${n} independent nodes agree on the same input`],
-    [`All ${n} nodes check your move and run Stockfish`, move ? `${fmt(move.instructions)} instructions · ${fmt(move.nodes)} positions · depth ${move.depth} — identical on every node`
-      : `same code, same input, same result · up to ${fmt(info ? info.max_nodes : 2500000)} positions`],
-    ["Both moves are written to the canister's stable memory", game ? `game #${game.id} · move ${Math.ceil(plies() / 2)} · the reply is signed by the subnet` : "the reply is signed by the subnet"],
+    ["You make a move",
+     "It goes straight to the game itself, not to some company's server.",
+     `HTTP <em>POST /api/game/${id}/move</em><br>body: "&lt;game key&gt;\\n${uci}"<br>→ ICP HTTP gateway, canister <em>${short(can)}</em>`],
+    ["It's handled like a transaction, but free for you",
+     "The network has to agree on it, yet you need no wallet, no account and pay nothing.",
+     `http_request (query) replies <em>upgrade = true</em><br>→ gateway re-sends it as <em>http_request_update</em>, an update call<br>caller: anonymous · fees: the canister's cycles ("reverse gas")`],
+    [`${n} independent computers agree on it`,
+     "Machines run by different operators put your move in the same place in line. No single one can slip in a fake move.",
+     `consensus on subnet <em>${short(sub)}</em> (${n} nodes)<br>the message is included in a block, in a deterministic order`],
+    ["All of them referee your move and think of a reply",
+     move ? `Every computer checked your move was legal, then looked at ${move.nodes.toLocaleString()} positions and found the same answer. Nobody can secretly change the engine or the rules.`
+          : "Every computer checks your move is legal, runs the same chess engine and must reach exactly the same answer.",
+     move ? `replicated wasm execution: Stockfish 11 (C++ → wasm with icpp-pro)<br>UCI::to_move() legality check, then search: depth <em>${move.depth}</em>, <em>${move.nodes.toLocaleString()}</em> nodes<br><em>${fmt(move.instructions)}</em> instructions of the 40B per-message limit · deterministic`
+          : `replicated wasm execution: Stockfish 11 (C++ → wasm with icpp-pro)<br>UCI::to_move() legality check, then a search capped at ${fmt(info ? info.max_nodes : 2500000)} nodes<br>must fit in 40B instructions · deterministic on every replica`],
+    ["Both moves are saved for good",
+     "The game record is written into the game's own permanent storage, and the answer comes back stamped by the network as proof it agreed.",
+     `appended to <em>/game_${id}.txt</em> in stable memory (ic-wasi-polyfill stable-fs, survives upgrades)<br>reply certified by the subnet's threshold signature, checked by the gateway`],
   ];
-  $("steps").innerHTML = list.map(([t, d], i) =>
-    `<li class="step ${i < state ? "done" : i === state ? "active" : ""}"><b>${t}</b><small>${d}</small></li>`).join("");
+  const cls = (i) => (i < state ? "s-done" : i === state ? "s-active" : "");
+  $("steps").innerHTML = `<div></div><div class="head plain-h">In plain words</div><div class="head tech">Under the hood</div>` +
+    list.map(([t, d, tech], i) => `
+      <div class="dot ${cls(i)} ${i === list.length - 1 ? "end" : ""}"></div>
+      <div class="plain ${cls(i)}"><b>${t}</b><span>${d}</span></div>
+      <div class="tech ${cls(i)}">${tech}</div>`).join("");
 }
 
 let ticker = null;
@@ -245,6 +281,12 @@ function animateThinking() {
   steps(0);
   clearInterval(ticker);
   ticker = setInterval(() => { if (s < 3) steps(++s); }, 260);
+}
+
+function moneyWords(usd) {
+  if (usd < 0.001) return "a tiny fraction of a cent";
+  if (usd < 0.01) return "less than one cent";
+  return `about ${(usd * 100).toFixed(1)} cents`;
 }
 
 function showReceipt(i) {
@@ -258,27 +300,35 @@ function showReceipt(i) {
   const cycles = m.instructions * CYCLES_PER_INSTR_13 * (n / 13);
   const usd = cycles / 1e12 * USD_PER_TCYCLES;
   const when = new Date(m.time_ns / 1e6).toLocaleString();
-  const dash = (kind, id) => LOCAL ? `<span class="mono">${id}</span>`
-    : `<a class="mono" href="https://dashboard.internetcomputer.org/${kind}/${id}" target="_blank" rel="noopener">${id}</a>`;
+  const label = `${Math.floor(j / 2) + 1}${j % 2 ? "…" : "."} ${s[j]}`;
+  const dash = (kind, id) => LOCAL ? id
+    : `<a href="https://dashboard.internetcomputer.org/${kind}/${id}" target="_blank" rel="noopener">${id}</a>`;
   box.hidden = false;
   box.innerHTML = `
-    <div class="label"><span>Receipt · ${Math.floor(j / 2) + 1}${j % 2 ? "…" : "."} ${s[j]} by the canister</span></div>
-    <div class="big">
-      <div><b>${fmt(m.instructions)}</b><span>wasm instructions</span></div>
-      <div><b>${fmt(m.nodes)}</b><span>positions searched</span></div>
-      <div><b>≈ $${usd < 0.01 ? usd.toFixed(4) : usd.toFixed(3)}</b><span>≈ ${fmt(cycles)} cycles</span></div>
+    <div class="flow">
+      <div class="head plain-h">Receipt for ${label}, in plain words</div><div class="head tech">The same receipt, technically</div>
+      <div class="story">
+        The chain played <strong>${label}</strong>. To choose it, all ${n} computers each looked at
+        <strong>${m.nodes.toLocaleString()} positions</strong> and agreed on the move.
+        It cost ${moneyWords(usd)}, and <strong>the game paid, not you</strong>: no wallet, no fees.
+        The move was saved on ${when}, and anyone can
+        <a href="/game/${game.id}">replay this game</a> or <a href="/api/game/${game.id}" target="_blank" rel="noopener">read its raw record</a>.
+      </div>
+      <dl class="kv">
+        <dt>move</dt><dd>${m.uci} (ply ${j + 1} of game #${game.id})</dd>
+        <dt>instructions</dt><dd>${m.instructions.toLocaleString()} (limit 40,000,000,000)</dd>
+        <dt>search</dt><dd>depth ${m.depth} · ${m.nodes.toLocaleString()} nodes · eval ${(m.score_cp / 100).toFixed(2)} (side to move)</dd>
+        <dt>cycles</dt><dd>≈ ${fmt(cycles)} ≈ $${usd < 0.01 ? usd.toFixed(4) : usd.toFixed(3)} (estimate)</dd>
+        <dt>paid by</dt><dd>canister cycles balance (reverse gas)</dd>
+        <dt>executed</dt><dd>replicated on ${n} nodes, via consensus</dd>
+        <dt>canister</dt><dd>${info ? dash("canister", info.canister) : "–"}</dd>
+        <dt>subnet</dt><dd>${info ? dash("subnet", info.subnet) : "–"}</dd>
+        <dt>ic time</dt><dd>${m.time_ns} ns</dd>
+        <dt>stored</dt><dd>/game_${game.id}.txt · stable memory</dd>
+      </dl>
     </div>
-    <dl class="kv">
-      <dt>Computed by</dt><dd>all ${n} nodes of the subnet, agreed by consensus</dd>
-      <dt>Paid by</dt><dd>the canister's own cycles · you paid nothing and needed no wallet</dd>
-      <dt>Canister</dt><dd>${info ? dash("canister", info.canister) : "–"}</dd>
-      <dt>Subnet</dt><dd>${info ? dash("subnet", info.subnet) : "–"}</dd>
-      <dt>Recorded</dt><dd>${when} (IC time)</dd>
-      <dt>Search</dt><dd>depth ${m.depth} · eval ${(m.score_cp / 100).toFixed(2)} for the side to move</dd>
-      <dt>Record</dt><dd><a href="/api/game/${game.id}" target="_blank" rel="noopener">game #${game.id} as stored on-chain</a></dd>
-    </dl>
-    <div class="note">Cost is an estimate from the instruction count: 4 cycles per 10 instructions on a 13-node subnet, 1T cycles ≈ $1.35.
-      ${LOCAL ? "This is a local replica; on mainnet the canister and subnet link to the IC dashboard, where anyone can check the code's module hash." : "Open the canister on the IC dashboard to check its module hash and controllers."}</div>`;
+    <div class="note">The cost is an estimate from the instruction count: 4 cycles per 10 instructions on a 13-node subnet, 1T cycles ≈ $1.35.
+      ${LOCAL ? "This is a local test network. On mainnet the canister and subnet link to the IC dashboard, where anyone can check which code is running." : "Open the canister on the IC dashboard to check which code is running (its module hash) and who controls it."}</div>`;
 }
 
 // ---------- flow ----------
