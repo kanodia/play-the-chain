@@ -2,6 +2,7 @@
 
 #include <cstdint>
 #include <string>
+#include <vector>
 
 // A thin, thread-free facade over Stockfish 11, built with SF_NO_THREADS so a
 // search runs synchronously inside the calling message.
@@ -24,3 +25,20 @@ void engine_new_game();
 // node costs about 8-10k instructions. Returns false if the FEN is not valid.
 bool engine_bestmove(const std::string &fen, int depth, uint64_t max_nodes,
                      EngineResult &out);
+
+// Games are kept as their moves in UCI notation, played from the start
+// position, so the engine sees the whole history (repetitions, 50-move rule).
+
+enum class GameStatus { Playing, Checkmate, Stalemate, Draw };
+
+struct GameState {
+  bool legal = false; // false if a move in the list is illegal
+  std::string fen;    // position after the moves
+  GameStatus status = GameStatus::Playing;
+};
+
+GameState engine_game_state(const std::vector<std::string> &moves);
+
+// Search the position after `moves`, as engine_bestmove does for a FEN.
+bool engine_bestmove_after(const std::vector<std::string> &moves, int depth,
+                           uint64_t max_nodes, EngineResult &out);

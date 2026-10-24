@@ -7,6 +7,7 @@
 #include <string>
 
 #include "engine.h"
+#include "games.h"
 #include "ic_api.h"
 #include "ui_html.h"
 
@@ -72,7 +73,14 @@ void new_game() {
 }
 
 //----------------------------------------------------------------------------------
-// HTTP
+// HTTP: the board page, and a small JSON API in which the canister is the
+// referee - it checks every human move, plays its own and records both.
+//
+//   GET  /  and  /game/<id>     the page
+//   GET  /api/info              canister, subnet, games played
+//   GET  /api/game/<id>         a game with a receipt for every engine move
+//   POST /api/game              body "<depth>\n<w|b>"  -> new game
+//   POST /api/game/<id>/move    body "<key>\n<uci>"    -> the engine replies
 
 static std::string path_of(const std::string &url) {
   return url.substr(0, url.find('?'));
@@ -89,12 +97,128 @@ static IC_HttpResponse respond(uint16_t status, const std::string &type,
   return response;
 }
 
-static bool is_page(const std::string &method, const std::string &path) {
-  return method == "GET" && (path == "/" || path == "/index.html");
+static IC_HttpResponse json(const std::string &body) {
+  return respond(200, "application/json", body);
 }
 
-static bool is_move(const std::string &method, const std::string &path) {
-  return method == "POST" && path == "/move";
+static IC_HttpResponse error(uint16_t status, const std::string &msg) {
+  return respond(status, "application/json", "{\"error\":\"" + msg + "\"}");
+}
+
+// "/api/game/12/move" with prefix "/api/game/" -> 12, rest "/move"
+static bool parse_id(const std::string &path, const std::string &prefix,
+                     uint64_t &id, std::string &rest) {
+  if (path.rfind(prefix, 0) != 0) return false;
+  size_t start = prefix.size(), end = start;
+  while (end < path.size() && isdigit(static_cast<unsigned char>(path[end])))
+    ++end;
+  if (end == start || end - start > 18) return false;
+  id = std::stoull(path.substr(start, end - start));
+  rest = path.substr(end);
+  return true;
+}
+
+static const char *status_text(GameStatus s) {
+  switch (s) {
+  case GameStatus::Checkmate: return "checkmate";
+  case GameStatus::Stalemate: return "stalemate";
+  case GameStatus::Draw: return "draw";
+  default: return "playing";
+  }
+}
+
+static std::string game_json(const Game &g, bool with_key) {
+  GameState st = engine_game_state(g.moves());
+  std::string out = "{\"id\":" + std::to_string(g.id) +
+                    ",\"depth\":" + std::to_string(g.depth) +
+                    ",\"human\":\"" + std::string(1, g.human) + "\"" +
+                    ",\"created_ns\":" + std::to_string(g.created_ns) +
+                    ",\"fen\":\"" + st.fen + "\"" + ",\"status\":\"" +
+                    status_text(st.status) + "\"";
+  if (with_key) out += ",\"key\":\"" + g.key + "\"";
+  out += ",\"moves\":[";
+  for (size_t i = 0; i < g.plies.size(); ++i) {
+    const Ply &p = g.plies[i];
+    if (i) out += ",";
+    out += "{\"uci\":\"" + p.uci + "\",\"by\":\"" +
+           (p.by_engine ? "engine" : "human") +
+           "\",\"time_ns\":" + std::to_string(p.time_ns);
+    if (p.by_engine)
+      out += ",\"instructions\":" + std::to_string(p.instructions) +
+             ",\"nodes\":" + std::to_string(p.nodes) +
+             ",\"depth\":" + std::to_string(p.depth) +
+             ",\"score_cp\":" + std::to_string(p.score_cp);
+    out += "}";
+  }
+  return out + "]}";
+}
+
+// The engine plays its move in `g`, measured, and records it.
+static void engine_reply(Game &g) {
+  EngineResult res;
+  uint64_t start = instructions();
+  engine_bestmove_after(g.moves(), g.depth, MAX_NODES, res);
+  Ply p;
+  p.uci = res.bestmove;
+  p.by_engine = true;
+  p.time_ns = IC_API::time();
+  p.instructions = instructions() - start;
+  p.nodes = res.nodes;
+  p.depth = res.depth;
+  p.score_cp = res.score_cp;
+  g.plies.push_back(p);
+}
+
+static IC_HttpResponse api_info(IC_API &ic_api) {
+  return json("{\"canister\":\"" + ic_api.get_canister_self().get_text() +
+              "\",\"subnet\":\"" + ic_api.get_subnet_self().get_text() +
+              "\",\"nodes\":" + std::to_string(ic_api.get_subnet_node_count()) +
+              ",\"games\":" + std::to_string(games_count()) +
+              ",\"engine\":\"Stockfish 11\",\"max_nodes\":" +
+              std::to_string(MAX_NODES) + "}");
+}
+
+static IC_HttpResponse api_new_game(const std::string &body) {
+  size_t nl = body.find('\n');
+  int depth = std::atoi(body.substr(0, nl).c_str());
+  char human = nl == std::string::npos || nl + 1 >= body.size() ? 'w' : body[nl + 1];
+  if (depth < 1 || depth > MAX_DEPTH || (human != 'w' && human != 'b'))
+    return error(400, "send <depth 1-20>\\n<w|b>");
+
+  Game g = game_new(depth, human, IC_API::time());
+  if (g.engine_to_move()) engine_reply(g);
+  game_save(g);
+  return json(game_json(g, true));
+}
+
+static IC_HttpResponse api_move(uint64_t id, const std::string &body) {
+  Game g;
+  if (!game_load(id, g)) return error(404, "no such game");
+
+  size_t nl = body.find('\n');
+  if (nl == std::string::npos) return error(400, "send <key>\\n<uci>");
+  if (body.substr(0, nl) != g.key) return error(403, "not your game");
+  std::string uci = body.substr(nl + 1);
+  while (!uci.empty() && isspace(static_cast<unsigned char>(uci.back())))
+    uci.pop_back();
+
+  if (g.engine_to_move()) return error(409, "not your turn");
+  if (engine_game_state(g.moves()).status != GameStatus::Playing)
+    return error(409, "the game is over");
+
+  std::vector<std::string> moves = g.moves();
+  moves.push_back(uci);
+  if (uci.size() < 4 || uci.size() > 5 || !engine_game_state(moves).legal)
+    return error(400, "illegal move " + uci);
+
+  Ply p;
+  p.uci = uci;
+  p.time_ns = IC_API::time();
+  g.plies.push_back(p);
+  if (engine_game_state(g.moves()).status == GameStatus::Playing)
+    engine_reply(g);
+  game_save(g);
+  return json(game_json(g, false));
 }
 
 // Nothing here is certified, so every request, a 404 included, is upgraded to
@@ -111,40 +235,32 @@ void http_request() {
   ic_api.to_wire(response);
 }
 
-// GET / -> the board. POST /move, body "<depth>\n<fen>" -> JSON with the
-// move and what it cost.
 void http_request_update() {
   IC_API ic_api(CanisterUpdate{std::string(__func__)}, false);
   IC_HttpUpdateRequest request;
   ic_api.from_wire(request);
 
+  const std::string &method = request.method;
   std::string path = path_of(request.url);
-  if (is_page(request.method, path)) {
-    ic_api.to_wire(respond(200, "text/html; charset=utf-8", UI_HTML));
-    return;
-  }
-  if (!is_move(request.method, path)) {
-    ic_api.to_wire(respond(404, "text/plain", "Not found"));
-    return;
-  }
-
   std::string body(request.body.begin(), request.body.end());
-  size_t nl = body.find('\n');
-  int depth = nl == std::string::npos ? 0 : std::atoi(body.substr(0, nl).c_str());
-  std::string fen = nl == std::string::npos ? "" : body.substr(nl + 1);
+  uint64_t id{0};
+  std::string rest;
 
-  EngineResult res;
-  uint64_t used{0};
-  if (depth < 1 || depth > MAX_DEPTH || !search(fen, depth, res, used) ||
-      res.bestmove.empty()) {
-    ic_api.to_wire(respond(400, "text/plain", "Send \"<depth 1-20>\\n<FEN>\""));
-    return;
+  IC_HttpResponse response = error(404, "not found");
+  if (method == "GET" &&
+      (path == "/" || (parse_id(path, "/game/", id, rest) && rest.empty()))) {
+    response = respond(200, "text/html; charset=utf-8", UI_HTML);
+  } else if (method == "GET" && path == "/api/info") {
+    response = api_info(ic_api);
+  } else if (method == "GET" && parse_id(path, "/api/game/", id, rest) &&
+             rest.empty()) {
+    Game g;
+    if (game_load(id, g)) response = json(game_json(g, false));
+  } else if (method == "POST" && path == "/api/game") {
+    response = api_new_game(body);
+  } else if (method == "POST" && parse_id(path, "/api/game/", id, rest) &&
+             rest == "/move") {
+    response = api_move(id, body);
   }
-
-  std::string json = "{\"bestmove\":\"" + res.bestmove +
-                     "\",\"score_cp\":" + std::to_string(res.score_cp) +
-                     ",\"depth\":" + std::to_string(res.depth) +
-                     ",\"nodes\":" + std::to_string(res.nodes) +
-                     ",\"instructions\":" + std::to_string(used) + "}";
-  ic_api.to_wire(respond(200, "application/json", json));
+  ic_api.to_wire(response);
 }
