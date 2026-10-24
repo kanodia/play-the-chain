@@ -1,0 +1,14 @@
+type SearchResult = record {
+  bestmove : text;
+  score_cp : int32;
+  depth : nat8;
+  nodes : nat64;
+  instructions : nat64;
+};
+
+service : {
+  // Search a FEN position to a fixed depth (1..30).
+  bestmove : (text, nat8) -> (SearchResult);
+  // Clear the hash table and histories, as for a new game.
+  new_game : () -> ();
+};

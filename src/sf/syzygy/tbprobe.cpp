@@ -27,7 +27,9 @@
 #include <list>
 #include <sstream>
 #include <type_traits>
+#ifndef SF_NO_THREADS
 #include <mutex>
+#endif
 
 #include "../bitboard.h"
 #include "../movegen.h"
@@ -225,7 +227,9 @@ public:
 
         *mapping = statbuf.st_size;
         *baseAddress = mmap(nullptr, statbuf.st_size, PROT_READ, MAP_SHARED, fd, 0);
+#ifndef __wasi__
         madvise(*baseAddress, statbuf.st_size, MADV_RANDOM);
+#endif
         ::close(fd);
 
         if (*baseAddress == MAP_FAILED)
@@ -1124,14 +1128,18 @@ void set(T& e, uint8_t* data) {
 template<TBType Type>
 void* mapped(TBTable<Type>& e, const Position& pos) {
 
+#ifndef SF_NO_THREADS
     static std::mutex mutex;
+#endif
 
     // Use 'acquire' to avoid a thread reading 'ready' == true while
     // another is still working. (compiler reordering may cause this).
     if (e.ready.load(std::memory_order_acquire))
         return e.baseAddress; // Could be nullptr if file does not exist
 
+#ifndef SF_NO_THREADS
     std::unique_lock<std::mutex> lk(mutex);
+#endif
 
     if (e.ready.load(std::memory_order_relaxed)) // Recheck under lock
         return e.baseAddress;

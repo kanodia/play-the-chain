@@ -20,7 +20,9 @@
 
 #include <cstring>   // For std::memset
 #include <iostream>
+#ifndef SF_NO_THREADS
 #include <thread>
+#endif
 
 #include "bitboard.h"
 #include "misc.h"
@@ -85,6 +87,9 @@ void TranspositionTable::resize(size_t mbSize) {
 
 void TranspositionTable::clear() {
 
+#ifdef SF_NO_THREADS
+  std::memset(table, 0, clusterCount * sizeof(Cluster));
+#else
   std::vector<std::thread> threads;
 
   for (size_t idx = 0; idx < Options["Threads"]; ++idx)
@@ -107,6 +112,7 @@ void TranspositionTable::clear() {
 
   for (std::thread& th: threads)
       th.join();
+#endif
 }
 
 /// TranspositionTable::probe() looks up the current position in the transposition

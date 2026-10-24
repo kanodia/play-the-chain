@@ -22,17 +22,21 @@
 #define THREAD_H_INCLUDED
 
 #include <atomic>
+#include <vector>
+#ifndef SF_NO_THREADS
 #include <condition_variable>
 #include <mutex>
 #include <thread>
-#include <vector>
+#endif
 
 #include "material.h"
 #include "movepick.h"
 #include "pawns.h"
 #include "position.h"
 #include "search.h"
+#ifndef SF_NO_THREADS
 #include "thread_win32_osx.h"
+#endif
 
 
 /// Thread class keeps together all the thread-related stuff. We use
@@ -42,11 +46,15 @@
 
 class Thread {
 
+#ifndef SF_NO_THREADS
   std::mutex mutex;
   std::condition_variable cv;
+#endif
   size_t idx;
   bool exit = false, searching = true; // Set before starting std::thread
+#ifndef SF_NO_THREADS
   NativeThread stdThread;
+#endif
 
 public:
   explicit Thread(size_t);

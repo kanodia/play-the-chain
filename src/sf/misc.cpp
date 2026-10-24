@@ -246,6 +246,7 @@ void dbg_print() {
 
 std::ostream& operator<<(std::ostream& os, SyncCout sc) {
 
+#ifndef SF_NO_THREADS
   static std::mutex m;
 
   if (sc == IO_LOCK)
@@ -253,6 +254,9 @@ std::ostream& operator<<(std::ostream& os, SyncCout sc) {
 
   if (sc == IO_UNLOCK)
       m.unlock();
+#else
+  (void)sc;
+#endif
 
   return os;
 }

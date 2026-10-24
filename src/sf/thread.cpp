@@ -31,6 +31,23 @@
 ThreadPool Threads; // Global object
 
 
+#ifdef SF_NO_THREADS
+
+/// With SF_NO_THREADS (e.g. inside an IC canister) there is no thread to park:
+/// start_searching() runs the search synchronously on the caller's stack.
+
+Thread::Thread(size_t n) : idx(n) {
+
+  searching = false;
+}
+
+Thread::~Thread() {
+
+  assert(!searching);
+}
+
+#else
+
 /// Thread constructor launches the thread and waits until it goes to sleep
 /// in idle_loop(). Note that 'searching' and 'exit' should be already set.
 
@@ -51,6 +68,8 @@ Thread::~Thread() {
   start_searching();
   stdThread.join();
 }
+
+#endif
 
 /// Thread::bestMoveCount(Move move) return best move counter for the given root move
 
@@ -80,6 +99,21 @@ void Thread::clear() {
     for (StatsType c : { NoCaptures, Captures })
       continuationHistory[inCheck][c][NO_PIECE][0]->fill(Search::CounterMovePruneThreshold - 1);
 }
+
+#ifdef SF_NO_THREADS
+
+void Thread::start_searching() {
+
+  searching = true;
+  search();
+  searching = false;
+}
+
+void Thread::wait_for_search_finished() {}
+
+void Thread::idle_loop() {}
+
+#else
 
 /// Thread::start_searching() wakes up the thread that will start the search
 
@@ -129,6 +163,8 @@ void Thread::idle_loop() {
       search();
   }
 }
+
+#endif
 
 /// ThreadPool::set() creates/destroys threads to match the requested number.
 /// Created and launched threads will immediately go to sleep in idle_loop.
