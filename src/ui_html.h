@@ -85,6 +85,10 @@ static const char UI_HTML[] = R"HTML(<!doctype html>
   .s-active.dot::before { border-color: var(--accent); animation: pulse 1s infinite; }
   @keyframes pulse { 0%,100% { box-shadow: 0 0 0 0 rgba(94,242,200,.6); } 50% { box-shadow: 0 0 0 6px rgba(94,242,200,0); } }
   @media (prefers-reduced-motion: reduce) { .s-active.dot::before { animation: none; } }
+  .budget { margin-bottom: 18px; }
+  .budget .plain, .budget .tech { padding-bottom: 0; color: var(--text); }
+  .meter { height: 6px; border-radius: 3px; background: var(--line); margin-top: 6px; overflow: hidden; }
+  .meter i { display: block; height: 100%; background: var(--accent); }
   .receipt { margin-top: 6px; border-top: 1px dashed #2d3a44; padding-top: 14px; }
   .receipt .flow { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
   .story { font-size: 15px; line-height: 1.6; }
@@ -152,6 +156,7 @@ static const char UI_HTML[] = R"HTML(<!doctype html>
     <div class="label"><span>⛓ On-chain view</span><span id="chain-where" class="mono"></span></div>
     <h2>What happens when you move</h2>
     <div class="sub">Left: what it means. Right: what actually runs, for the technically curious.</div>
+    <div id="budget" class="flow budget"></div>
     <div id="steps" class="flow"></div>
     <div id="receipt" class="receipt" hidden></div>
   </section>
@@ -278,6 +283,21 @@ function steps(state, move) {
       <div class="tech ${cls(i)}">${tech}</div>`).join("");
 }
 
+function renderBudget() {
+  if (!info || info.budget === undefined) return;
+  const pct = Math.min(100, Math.round(info.used_today / info.budget * 100));
+  const plain = info.used_today >= info.hard_limit ? "Today's allowance is used up. The chain is resting until midnight UTC."
+    : info.used_today >= info.budget ? `Today's allowance is used up, so the chain now replies quickly (a lighter search) until midnight UTC.`
+    : `The game pays for its own thinking from a small daily allowance, so nobody can run up its bill. ${pct}% used today.`;
+  $("budget").innerHTML = `<div></div>
+    <div class="plain"><b>Today's allowance</b><span>${plain}</span><div class="meter"><i style="width:${pct}%"></i></div></div>
+    <div class="tech">used_today <em>${fmt(info.used_today)}</em> / ${fmt(info.budget)} instructions at full strength<br>
+      then depth ${info.quick_depth} replies until ${fmt(info.hard_limit)} · then HTTP 429<br>counter resets 00:00 UTC (IC time)</div>`;
+}
+async function refreshInfo() {
+  try { info = await call("GET", "/api/info"); renderBudget(); } catch (e) {}
+}
+
 let ticker = null;
 function animateThinking() {
   let s = 0;
@@ -314,6 +334,7 @@ function showReceipt(i) {
         The chain played <strong>${label}</strong>. To choose it, all ${n} computers each looked at
         <strong>${m.nodes.toLocaleString()} positions</strong> and agreed on the move.
         It cost ${moneyWords(usd)}, and <strong>the game paid, not you</strong>: no wallet, no fees.
+        ${m.quick ? "Today's allowance was used up, so this was a quick, lighter search." : ""}
         The move was saved on ${when}, and anyone can
         <a href="/game/${game.id}">replay this game</a> or <a href="/api/game/${game.id}" target="_blank" rel="noopener">read its raw record</a>.
       </div>
@@ -322,6 +343,7 @@ function showReceipt(i) {
         <dt>instructions</dt><dd>${m.instructions.toLocaleString()} (limit 40,000,000,000)</dd>
         <dt>search</dt><dd>depth ${m.depth} · ${m.nodes.toLocaleString()} nodes · eval ${(m.score_cp / 100).toFixed(2)} (side to move)</dd>
         <dt>cycles</dt><dd>≈ ${fmt(cycles)} ≈ $${usd < 0.01 ? usd.toFixed(4) : usd.toFixed(3)} (estimate)</dd>
+        <dt>mode</dt><dd>${m.quick ? "quick (daily budget used up)" : "full strength"}</dd>
         <dt>paid by</dt><dd>canister cycles balance (reverse gas)</dd>
         <dt>executed</dt><dd>replicated on ${n} nodes, via consensus</dd>
         <dt>canister</dt><dd>${info ? dash("canister", info.canister) : "–"}</dd>
@@ -363,6 +385,7 @@ function afterUpdate() {
   if (last) showReceipt(game.moves.lastIndexOf(last));
   setStatus(statusText());
   $("share").innerHTML = `<a href="/game/${game.id}">Share game #${game.id}</a> · anyone can replay it`;
+  refreshInfo();
   render();
 }
 
@@ -421,7 +444,7 @@ async function load() {
   steps(-1);
   render(); // the start position, while the canister answers
   if (m) { $("setup").hidden = true; setStatus(`Loading game #${m[1]} from the canister…`, true); }
-  try { info = await call("GET", "/api/info"); $("chain-where").textContent = short(info.canister); steps(-1); } catch (e) {}
+  try { info = await call("GET", "/api/info"); $("chain-where").textContent = short(info.canister); steps(-1); renderBudget(); } catch (e) {}
   if (!m) return;
   try {
     game = await call("GET", "/api/game/" + m[1]);

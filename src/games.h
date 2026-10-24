@@ -16,6 +16,7 @@ struct Ply {
   uint64_t nodes = 0;
   int depth = 0;
   int score_cp = 0;
+  bool quick = false; // a cut-down search: the daily budget was used up
 };
 
 struct Game {

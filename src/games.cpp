@@ -52,7 +52,7 @@ Game game_new(int depth, char human, uint64_t now_ns) {
 }
 
 // Line 1: "<key> <depth> <human> <created_ns>"; then one ply per line:
-// "<uci> <e|h> <time_ns> <instructions> <nodes> <depth> <score_cp>".
+// "<uci> <e|h> <time_ns> <instructions> <nodes> <depth> <score_cp> <quick>".
 void game_save(const Game &game) {
   std::ofstream file(game_path(game.id), std::ios::trunc);
   file << game.key << ' ' << game.depth << ' ' << game.human << ' '
@@ -60,7 +60,7 @@ void game_save(const Game &game) {
   for (const Ply &p : game.plies)
     file << p.uci << ' ' << (p.by_engine ? 'e' : 'h') << ' ' << p.time_ns
          << ' ' << p.instructions << ' ' << p.nodes << ' ' << p.depth << ' '
-         << p.score_cp << '\n';
+         << p.score_cp << ' ' << (p.quick ? 1 : 0) << '\n';
   file.close();
   if (!file) IC_API::trap("Failed to write " + game_path(game.id));
 }
@@ -72,11 +72,19 @@ bool game_load(uint64_t id, Game &game) {
   game = Game{};
   game.id = id;
   file >> game.key >> game.depth >> game.human >> game.created_ns;
-  Ply p;
-  char by{0};
-  while (file >> p.uci >> by >> p.time_ns >> p.instructions >> p.nodes >>
-         p.depth >> p.score_cp) {
+  std::string line;
+  std::getline(file, line); // rest of the header line
+  while (std::getline(file, line)) {
+    std::istringstream in(line);
+    Ply p;
+    char by{0};
+    int quick{0};
+    if (!(in >> p.uci >> by >> p.time_ns >> p.instructions >> p.nodes >>
+          p.depth >> p.score_cp))
+      continue;
+    in >> quick; // absent in games saved before the daily budget
     p.by_engine = by == 'e';
+    p.quick = quick != 0;
     game.plies.push_back(p);
   }
   return true;

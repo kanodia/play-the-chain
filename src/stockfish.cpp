@@ -3,6 +3,7 @@
 
 #include "stockfish.h"
 
+#include <algorithm>
 #include <cstdlib>
 #include <string>
 
@@ -16,6 +17,40 @@
 constexpr uint64_t MAX_NODES = 2'500'000;
 constexpr int MAX_DEPTH = 20;
 
+// Spend limits, so nobody can drain the canister's cycles. Up to the daily
+// budget moves are full strength (~$0.10 a day); then quick depth-8 replies
+// until the hard limit; then none until 00:00 UTC. Counted in heap memory, so
+// an upgrade starts the day's count again.
+#ifndef PTC_DAILY_BUDGET
+#define PTC_DAILY_BUDGET 200'000'000'000
+#define PTC_DAILY_HARD_LIMIT 250'000'000'000
+#endif
+constexpr uint64_t DAILY_BUDGET = PTC_DAILY_BUDGET;
+constexpr uint64_t DAILY_HARD_LIMIT = PTC_DAILY_HARD_LIMIT;
+constexpr int QUICK_DEPTH = 8;
+constexpr uint64_t QUICK_NODES = 20'000;
+constexpr uint64_t MAX_GAMES_PER_DAY = 300;
+constexpr size_t MAX_PLIES = 600;
+
+static uint64_t g_day = 0, g_used_today = 0, g_games_today = 0;
+
+static void roll_day() {
+  uint64_t day = IC_API::time() / 86'400'000'000'000ULL;
+  if (day != g_day) {
+    g_day = day;
+    g_used_today = 0;
+    g_games_today = 0;
+  }
+}
+
+static bool budget_left() {
+  roll_day();
+  return g_used_today < DAILY_HARD_LIMIT;
+}
+
+// Past the daily budget, searches are cut down to a quick reply.
+static bool quick_mode() { return g_used_today >= DAILY_BUDGET; }
+
 static uint64_t instructions() {
   return IC_API::performance_counter(
       IC_API::PerformanceCounterType::Instructions);
@@ -24,9 +59,12 @@ static uint64_t instructions() {
 // Runs one capped search and measures it. Returns false on an invalid FEN.
 static bool search(const std::string &fen, int depth, EngineResult &res,
                    uint64_t &used) {
+  bool quick = quick_mode();
   uint64_t start = instructions();
-  bool ok = engine_bestmove(fen, depth, MAX_NODES, res);
+  bool ok = engine_bestmove(fen, quick ? std::min(depth, QUICK_DEPTH) : depth,
+                            quick ? QUICK_NODES : MAX_NODES, res);
   used = instructions() - start;
+  g_used_today += used;
   return ok;
 }
 
@@ -52,6 +90,7 @@ void bestmove() {
   ic_api.from_wire(args_in);
 
   if (depth < 1 || depth > MAX_DEPTH) IC_API::trap("depth must be 1..20");
+  if (!budget_left()) IC_API::trap("daily budget used up, back at 00:00 UTC");
 
   EngineResult res;
   uint64_t used{0};
@@ -147,17 +186,21 @@ static std::string game_json(const Game &g, bool with_key) {
       out += ",\"instructions\":" + std::to_string(p.instructions) +
              ",\"nodes\":" + std::to_string(p.nodes) +
              ",\"depth\":" + std::to_string(p.depth) +
-             ",\"score_cp\":" + std::to_string(p.score_cp);
+             ",\"score_cp\":" + std::to_string(p.score_cp) +
+             ",\"quick\":" + (p.quick ? "true" : "false");
     out += "}";
   }
   return out + "]}";
 }
 
-// The engine plays its move in `g`, measured, and records it.
+// The engine plays its move in `g`, measured, and records it. The caller
+// checks budget_left() first.
 static void engine_reply(Game &g) {
+  bool quick = quick_mode();
   EngineResult res;
   uint64_t start = instructions();
-  engine_bestmove_after(g.moves(), g.depth, MAX_NODES, res);
+  engine_bestmove_after(g.moves(), quick ? std::min(g.depth, QUICK_DEPTH) : g.depth,
+                        quick ? QUICK_NODES : MAX_NODES, res);
   Ply p;
   p.uci = res.bestmove;
   p.by_engine = true;
@@ -166,16 +209,23 @@ static void engine_reply(Game &g) {
   p.nodes = res.nodes;
   p.depth = res.depth;
   p.score_cp = res.score_cp;
+  p.quick = quick;
   g.plies.push_back(p);
+  g_used_today += p.instructions;
 }
 
 static IC_HttpResponse api_info(IC_API &ic_api) {
+  roll_day();
   return json("{\"canister\":\"" + ic_api.get_canister_self().get_text() +
               "\",\"subnet\":\"" + ic_api.get_subnet_self().get_text() +
               "\",\"nodes\":" + std::to_string(ic_api.get_subnet_node_count()) +
               ",\"games\":" + std::to_string(games_count()) +
               ",\"engine\":\"Stockfish 11\",\"max_nodes\":" +
-              std::to_string(MAX_NODES) + "}");
+              std::to_string(MAX_NODES) +
+              ",\"used_today\":" + std::to_string(g_used_today) +
+              ",\"budget\":" + std::to_string(DAILY_BUDGET) +
+              ",\"hard_limit\":" + std::to_string(DAILY_HARD_LIMIT) +
+              ",\"quick_depth\":" + std::to_string(QUICK_DEPTH) + "}");
 }
 
 static IC_HttpResponse api_new_game(const std::string &body) {
@@ -184,6 +234,9 @@ static IC_HttpResponse api_new_game(const std::string &body) {
   char human = nl == std::string::npos || nl + 1 >= body.size() ? 'w' : body[nl + 1];
   if (depth < 1 || depth > MAX_DEPTH || (human != 'w' && human != 'b'))
     return error(400, "send <depth 1-20>\\n<w|b>");
+  if (!budget_left() || g_games_today >= MAX_GAMES_PER_DAY)
+    return error(429, "today's on-chain budget is used up, back at 00:00 UTC");
+  ++g_games_today;
 
   Game g = game_new(depth, human, IC_API::time());
   if (g.engine_to_move()) engine_reply(g);
@@ -205,6 +258,9 @@ static IC_HttpResponse api_move(uint64_t id, const std::string &body) {
   if (g.engine_to_move()) return error(409, "not your turn");
   if (engine_game_state(g.moves()).status != GameStatus::Playing)
     return error(409, "the game is over");
+  if (g.plies.size() + 2 > MAX_PLIES) return error(409, "the game is too long");
+  if (!budget_left())
+    return error(429, "today's on-chain budget is used up, back at 00:00 UTC");
 
   std::vector<std::string> moves = g.moves();
   moves.push_back(uci);

@@ -1,0 +1,10 @@
+{
+  "canisters": {
+    "stockfish": {
+      "type": "custom",
+      "wasm": "build/stockfish.wasm",
+      "candid": "src/stockfish.did"
+    }
+  },
+  "version": 1
+}
