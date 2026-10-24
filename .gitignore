@@ -2,3 +2,5 @@ build/
 build-native/
 build-library/
 .icp/
+.dfx/
+build-library-native/
