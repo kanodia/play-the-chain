@@ -6,9 +6,37 @@ type SearchResult = record {
   instructions : nat64;
 };
 
+type HeaderField = record { text; text };
+
+type HttpRequest = record {
+  method : text;
+  url : text;
+  headers : vec HeaderField;
+  body : blob;
+  certificate_version : opt nat16;
+};
+
+type HttpUpdateRequest = record {
+  method : text;
+  url : text;
+  headers : vec HeaderField;
+  body : blob;
+};
+
+type HttpResponse = record {
+  status_code : nat16;
+  headers : vec HeaderField;
+  body : blob;
+  upgrade : opt bool;
+};
+
 service : {
-  // Search a FEN position to a fixed depth (1..30).
+  // Search a FEN position to a fixed depth (1..20), capped at 2.5M nodes.
   bestmove : (text, nat8) -> (SearchResult);
   // Clear the hash table and histories, as for a new game.
   new_game : () -> ();
+
+  // GET / serves the board; POST /move ("<depth>\n<fen>") plays a move.
+  http_request : (HttpRequest) -> (HttpResponse) query;
+  http_request_update : (HttpUpdateRequest) -> (HttpResponse);
 };

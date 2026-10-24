@@ -28,7 +28,8 @@ void engine_init() {
 
 void engine_new_game() { Search::clear(); }
 
-bool engine_bestmove(const std::string &fen, int depth, EngineResult &out) {
+bool engine_bestmove(const std::string &fen, int depth, uint64_t max_nodes,
+                     EngineResult &out) {
   StateListPtr states(new std::deque<StateInfo>(1));
   Position pos;
   pos.set(fen, false, &states->back(), Threads.main());
@@ -37,6 +38,7 @@ bool engine_bestmove(const std::string &fen, int depth, EngineResult &out) {
   Search::LimitsType limits;
   limits.startTime = now();
   limits.depth = depth;
+  limits.nodes = max_nodes;
 
   // With SF_NO_THREADS this returns after the search has finished.
   Threads.start_thinking(pos, states, limits);

@@ -19,6 +19,8 @@ void engine_init();
 // Forget the hash and histories, as for a new game.
 void engine_new_game();
 
-// Search `fen` to a fixed `depth`. Returns false if the FEN is not a valid
-// position.
-bool engine_bestmove(const std::string &fen, int depth, EngineResult &out);
+// Search `fen` to a fixed `depth`, stopping early after `max_nodes` positions
+// (0 = no cap). The cap bounds the instructions of one search: on the IC a
+// node costs about 8-10k instructions. Returns false if the FEN is not valid.
+bool engine_bestmove(const std::string &fen, int depth, uint64_t max_nodes,
+                     EngineResult &out);

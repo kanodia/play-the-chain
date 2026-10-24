@@ -20,7 +20,7 @@ int main() {
     for (int depth : {6, 10, 14, 18}) {
       EngineResult r;
       auto t0 = std::chrono::steady_clock::now();
-      if (!engine_bestmove(fen, depth, r)) return 1;
+      if (!engine_bestmove(fen, depth, 0, r)) return 1;
       double ms = std::chrono::duration<double, std::milli>(
                       std::chrono::steady_clock::now() - t0)
                       .count();
