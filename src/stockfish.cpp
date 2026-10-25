@@ -18,12 +18,14 @@ constexpr uint64_t MAX_NODES = 2'500'000;
 constexpr int MAX_DEPTH = 20;
 
 // Spend limits, so nobody can drain the canister's cycles. Up to the daily
-// budget moves are full strength (~$0.10 a day); then quick depth-8 replies
+// budget moves are full strength; then quick depth-8 replies
 // until the hard limit; then none until 00:00 UTC. Counted in heap memory, so
-// an upgrade starts the day's count again.
+// an upgrade starts the day's count again. Measured on mainnet, a day at the
+// old 200B budget cost about 160B cycles, ~2.5x the instruction estimate, so
+// 80B full-strength instructions keeps a day near $0.10.
 #ifndef PTC_DAILY_BUDGET
-#define PTC_DAILY_BUDGET 200'000'000'000
-#define PTC_DAILY_HARD_LIMIT 250'000'000'000
+#define PTC_DAILY_BUDGET 80'000'000'000
+#define PTC_DAILY_HARD_LIMIT 100'000'000'000
 #endif
 constexpr uint64_t DAILY_BUDGET = PTC_DAILY_BUDGET;
 constexpr uint64_t DAILY_HARD_LIMIT = PTC_DAILY_HARD_LIMIT;
