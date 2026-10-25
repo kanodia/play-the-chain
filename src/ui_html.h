@@ -56,6 +56,11 @@ static const char UI_HTML[] = R"HTML(<!doctype html>
   button:hover, select:hover { border-color: var(--accent); }
   button.primary { background: var(--accent); color: #062a20; border-color: var(--accent); font-weight: 600; }
   button:disabled { opacity: .5; cursor: default; }
+  .share { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-top: 12px; }
+  .share a.btn { color: var(--text); background: #1c2230; border: 1px solid var(--line); border-radius: 8px;
+    padding: 8px 12px; text-decoration: none; font-size: 14px; }
+  .share a.btn:hover { border-color: var(--accent); }
+  .share .hint { color: var(--muted); font-size: 12.5px; flex-basis: 100%; }
   .banner { background: var(--accent-dim); border: 1px solid rgba(94,242,200,.35); border-radius: 10px;
     padding: 10px 12px; font-size: 14px; margin-top: 12px; }
 
@@ -144,6 +149,13 @@ static const char UI_HTML[] = R"HTML(<!doctype html>
           <button id="start" class="primary">Start a game</button>
         </div>
         <div id="spectator" class="banner" hidden></div>
+        <div id="share-row" class="share" hidden>
+          <button id="share-btn" class="primary">Share this game</button>
+          <button id="copy-btn">Copy link</button>
+          <a id="share-x" class="btn" target="_blank" rel="noopener">Post on X</a>
+          <a id="share-wa" class="btn" target="_blank" rel="noopener">WhatsApp</a>
+          <span class="hint">Anyone with the link can replay every move from the canister.</span>
+        </div>
       </div>
 
       <div class="panel">
@@ -384,9 +396,45 @@ function afterUpdate() {
   steps(last ? 5 : -1, last);
   if (last) showReceipt(game.moves.lastIndexOf(last));
   setStatus(statusText());
-  $("share").innerHTML = `<a href="/game/${game.id}">Share game #${game.id}</a> · anyone can replay it`;
+  $("share").innerHTML = `<a href="/game/${game.id}">Game #${game.id}</a> · anyone can replay it`;
+  updateShare();
   refreshInfo();
   render();
+}
+
+// ---------- share ----------
+function shareUrl() { return location.origin + "/game/" + game.id; }
+
+function shareText() {
+  const n = Math.ceil(plies() / 2);
+  const s = statusText();
+  if (!key) return `Watch this chess game against Stockfish, running inside an Internet Computer canister ♟⛓ Game #${game.id}:`;
+  if (s === "Checkmate. You beat the chain!") return `I beat Stockfish running on-chain in ${n} moves ♟⛓ Every move was refereed by an Internet Computer canister.`;
+  if (s === "Checkmate. The chain wins.") return `Stockfish, running inside an Internet Computer canister, checkmated me in ${n} moves ♟⛓ Can you do better?`;
+  if (game.status === "stalemate" || game.status === "draw") return `I drew against Stockfish running on-chain ♟⛓ Replay game #${game.id}:`;
+  return `I'm playing chess against Stockfish running inside an Internet Computer canister ♟⛓ Watch game #${game.id}:`;
+}
+
+function updateShare() {
+  $("share-row").hidden = !game;
+  if (!game) return;
+  const url = shareUrl(), text = shareText();
+  $("share-x").href = "https://x.com/intent/post?text=" + encodeURIComponent(text) + "&url=" + encodeURIComponent(url);
+  $("share-wa").href = "https://wa.me/?text=" + encodeURIComponent(text + " " + url);
+  // The native share sheet (phones, Safari) where there is one; otherwise copying is the main action.
+  $("share-btn").hidden = !navigator.share;
+}
+
+async function copyLink() {
+  const btn = $("copy-btn");
+  try { await navigator.clipboard.writeText(shareUrl()); btn.textContent = "Copied ✓"; }
+  catch (e) { $("share-row").querySelector(".hint").textContent = shareUrl(); return; }
+  setTimeout(() => { btn.textContent = "Copy link"; }, 1600);
+}
+
+async function share() {
+  try { await navigator.share({ title: `Play the Chain · game #${game.id}`, text: shareText(), url: shareUrl() }); }
+  catch (e) { if (e.name !== "AbortError") copyLink(); }
 }
 
 async function start() {
@@ -460,6 +508,8 @@ async function load() {
 }
 
 $("start").onclick = start;
+$("share-btn").onclick = share;
+$("copy-btn").onclick = copyLink;
 load();
 </script>
 </body>
