@@ -24,6 +24,9 @@ static const char UI_HTML[] = R"HTML(<!doctype html>
   h1 { margin: 0; font-size: 26px; letter-spacing: -.02em; }
   h1 span { color: var(--accent); }
   .tag { color: var(--muted); font-size: 14px; }
+  .about { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 12px 16px;
+    margin-bottom: 16px; font-size: 14px; line-height: 1.55; color: var(--muted); }
+  .about b { color: var(--text); }
   .layout { display: grid; grid-template-columns: minmax(0, 520px) minmax(0, 1fr); gap: 20px; align-items: start; }
   @media (max-width: 880px) { .layout { grid-template-columns: 1fr; } }
 
@@ -128,6 +131,11 @@ static const char UI_HTML[] = R"HTML(<!doctype html>
     <h1>Play the <span>Chain</span></h1>
     <div class="tag">Stockfish, compiled from C++ with icpp-pro, running inside an Internet Computer canister.</div>
   </header>
+  <p class="about"><b>What is Stockfish?</b> The strongest open-source chess engine in the world, and for years
+    the reigning computer chess champion. Grandmasters use it to analyse their games; no human has a realistic chance against it at full strength.
+    It's over 12,000 lines of performance-tuned C++. <b>What's new here:</b> that whole engine was compiled to WebAssembly and runs
+    <b>inside a smart contract</b> (a canister on the Internet Computer). Every move it plays is computed by 13 independent machines
+    that must agree on it, with no server behind it.</p>
   <div class="layout">
     <div>
       <div id="board" class="board" aria-label="Chess board"></div>

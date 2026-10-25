@@ -4,6 +4,11 @@
 
 ▶ **https://ne5l7-xiaaa-aaaaj-qsm3q-cai.icp0.io**
 
+[Stockfish](https://stockfishchess.org) is the strongest open-source chess
+engine, and has been the top computer chess engine for years. Grandmasters
+use it to analyse their games. It's over 12,000 lines of performance-tuned
+C++, and here the whole engine runs inside a smart contract.
+
 There is no server. One C++ canister serves the page, referees the game and
 thinks of its moves. Every engine move is computed by all 13 nodes of an
 application subnet, agreed on by consensus, and written to the canister's
