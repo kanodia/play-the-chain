@@ -117,6 +117,8 @@ void new_game() {
 //
 //   GET  /  and  /game/<id>     the page
 //   GET  /api/info              canister, subnet, games played
+//   GET  /games                 the dashboard of every game
+//   GET  /api/games             one summary line per game, and the cycles balance
 //   GET  /api/game/<id>         a game with a receipt for every engine move
 //   POST /api/game              body "<depth>\n<w|b>"  -> new game
 //   POST /api/game/<id>/move    body "<key>\n<uci>"    -> the engine replies
@@ -228,6 +230,61 @@ static IC_HttpResponse api_info(IC_API &ic_api) {
               ",\"quick_depth\":" + std::to_string(QUICK_DEPTH) + "}");
 }
 
+static std::string u128(__uint128_t v) {
+  if (v == 0) return "0";
+  std::string out;
+  while (v) { out.insert(out.begin(), char('0' + int(v % 10))); v /= 10; }
+  return out;
+}
+
+// One summary per game, oldest first. A game is about 50k instructions to
+// load and replay, so a few thousand games still fit easily in one message.
+static IC_HttpResponse api_games(IC_API &ic_api) {
+  roll_day();
+  uint64_t n = games_count();
+  std::string out = "{\"balance\":" + u128(ic_api.get_canister_self_cycle_balance()) +
+                    ",\"nodes\":" + std::to_string(ic_api.get_subnet_node_count()) +
+                    ",\"used_today\":" + std::to_string(g_used_today) +
+                    ",\"budget\":" + std::to_string(DAILY_BUDGET) +
+                    ",\"now_ns\":" + std::to_string(IC_API::time()) +
+                    ",\"games\":[";
+  bool first = true;
+  for (uint64_t id = 1; id <= n; ++id) {
+    Game g;
+    if (!game_load(id, g)) continue;
+    GameState st = engine_game_state(g.moves());
+    uint64_t instr{0}, nodes{0}, last_ns = g.created_ns;
+    int engine_moves{0}, quick{0};
+    for (const Ply &p : g.plies) {
+      last_ns = std::max(last_ns, p.time_ns);
+      if (!p.by_engine) continue;
+      ++engine_moves;
+      instr += p.instructions;
+      nodes += p.nodes;
+      quick += p.quick;
+    }
+    // After checkmate, whoever moved last won.
+    std::string winner;
+    if (st.status == GameStatus::Checkmate && !g.plies.empty())
+      winner = g.plies.back().by_engine ? "engine" : "human";
+    if (!first) out += ",";
+    first = false;
+    out += "{\"id\":" + std::to_string(g.id) +
+           ",\"depth\":" + std::to_string(g.depth) +
+           ",\"human\":\"" + std::string(1, g.human) + "\"" +
+           ",\"created_ns\":" + std::to_string(g.created_ns) +
+           ",\"last_ns\":" + std::to_string(last_ns) +
+           ",\"status\":\"" + status_text(st.status) + "\"" +
+           ",\"winner\":\"" + winner + "\"" +
+           ",\"plies\":" + std::to_string(g.plies.size()) +
+           ",\"engine_moves\":" + std::to_string(engine_moves) +
+           ",\"quick_moves\":" + std::to_string(quick) +
+           ",\"instructions\":" + std::to_string(instr) +
+           ",\"nodes\":" + std::to_string(nodes) + "}";
+  }
+  return json(out + "]}");
+}
+
 static IC_HttpResponse api_new_game(const std::string &body) {
   size_t nl = body.find('\n');
   int depth = std::atoi(body.substr(0, nl).c_str());
@@ -306,6 +363,10 @@ void http_request_update() {
   if (method == "GET" &&
       (path == "/" || (parse_id(path, "/game/", id, rest) && rest.empty()))) {
     response = respond(200, "text/html; charset=utf-8", UI_HTML);
+  } else if (method == "GET" && path == "/games") {
+    response = respond(200, "text/html; charset=utf-8", GAMES_HTML);
+  } else if (method == "GET" && path == "/api/games") {
+    response = api_games(ic_api);
   } else if (method == "GET" && path == "/api/info") {
     response = api_info(ic_api);
   } else if (method == "GET" && parse_id(path, "/api/game/", id, rest) &&
