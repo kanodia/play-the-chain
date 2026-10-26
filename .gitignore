@@ -4,3 +4,4 @@ build-library/
 .icp/
 .dfx/
 build-library-native/
+__pycache__/

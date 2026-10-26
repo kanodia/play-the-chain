@@ -123,6 +123,21 @@ static const char UI_HTML[] = R"HTML(<!doctype html>
   .moves button:hover { background: #1c2230; }
   .moves button.on { background: var(--accent-dim); color: var(--accent); }
   .moves button.eng::after { content: " ⛓"; font-size: 11px; opacity: .7; }
+  .fuel { margin-top: 20px; }
+  .fuel h2 { margin: 0 0 4px; font-size: 18px; }
+  .fuel .sub { color: var(--muted); font-size: 13.5px; margin-bottom: 14px; }
+  .fuel .grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.4fr); gap: 18px; }
+  .tank .v { font-size: 26px; font-weight: 650; letter-spacing: -.02em; font-variant-numeric: tabular-nums; }
+  .tank .state { font-size: 14px; margin-top: 2px; }
+  .tank .state.low { color: var(--warn); }
+  .send ol { margin: 0; padding-left: 20px; display: grid; gap: 10px; font-size: 14px; }
+  .addr { display: flex; gap: 8px; align-items: center; margin-top: 4px; flex-wrap: wrap; }
+  .addr code { font: 12px ui-monospace, SFMono-Regular, Menlo, monospace; background: var(--panel2); border: 1px solid var(--line);
+    border-radius: 6px; padding: 5px 8px; overflow-wrap: anywhere; min-width: 0; flex: 1 1 220px; }
+  .addr button { padding: 5px 10px; font-size: 13px; }
+  .refuels { margin-top: 14px; font: 12px/1.6 ui-monospace, SFMono-Regular, Menlo, monospace; color: var(--muted); }
+  #fuel-msg { font-size: 14px; margin-top: 8px; min-height: 1.4em; }
+  @media (max-width: 700px) { .fuel .grid { grid-template-columns: minmax(0, 1fr); } }
   .foot { margin-top: 20px; color: var(--muted); font-size: 13px; max-width: 760px; }
 </style>
 </head>
@@ -181,6 +196,36 @@ static const char UI_HTML[] = R"HTML(<!doctype html>
     <div id="budget" class="flow budget"></div>
     <div id="steps" class="flow"></div>
     <div id="receipt" class="receipt" hidden></div>
+  </section>
+  <section id="fuel" class="panel fuel">
+    <div class="label"><span>⛽ Fuel the chain</span><span><a href="/games">all games &amp; cycles →</a></span></div>
+    <h2>Everyone plays on a shared tank of cycles</h2>
+    <div class="sub">Every move the chain thinks of is paid in cycles from the canister's own balance. Anyone can top up the tank
+      with ICP, and the canister turns it into cycles itself, through the IC's cycles minting canister. Nothing is bought for you alone:
+      the fuel keeps the game free for everybody.</div>
+    <div class="grid">
+      <div class="tank">
+        <div class="k label" style="margin-bottom:4px"><span>In the tank</span></div>
+        <div class="v" id="tank-v">–</div>
+        <div class="state" id="tank-state">&nbsp;</div>
+        <div class="meter"><i id="tank-bar" style="width:0"></i></div>
+        <div class="refuels" id="refuels"></div>
+      </div>
+      <div class="send">
+        <ol>
+          <li><b>Send ICP</b> from your <a href="https://funnai.ic0.app/wallet" target="_blank" rel="noopener">funnAI wallet</a>,
+            the NNS app or any ICP wallet, to the canister's principal:
+            <div class="addr"><code id="fuel-principal">ne5l7-xiaaa-aaaaj-qsm3q-cai</code><button data-copy="fuel-principal">Copy</button></div>
+            From an exchange, use its account ID:
+            <div class="addr"><code id="fuel-account">460d1214503541468865ef7728ed17cf6e232585e6898a8d1626230ffa8e2cc7</code><button data-copy="fuel-account">Copy</button></div>
+          </li>
+          <li><b>Press Refuel.</b> The canister finds the ICP and turns it into cycles.
+            <div class="row"><button id="refuel" class="primary">Refuel now</button></div>
+            <div id="fuel-msg"></div>
+          </li>
+        </ol>
+      </div>
+    </div>
   </section>
   <p class="foot">Nothing here runs on a server. The page, the rules and the engine all live in one canister:
     it checks your move, runs a single-threaded Stockfish 11 search inside the 40B-instruction limit of one message,
@@ -315,7 +360,49 @@ function renderBudget() {
     <div class="plain"><b>Today's allowance</b><span>${plain}</span><div class="meter"><i style="width:${pct}%"></i></div></div>
     <div class="tech">used_today <em>${fmt(info.used_today)}</em> / ${fmt(info.budget)} instructions at full strength<br>
       then depth ${info.quick_depth} replies until ${fmt(info.hard_limit)} · then HTTP 429<br>counter resets 00:00 UTC (IC time)</div>`;
+  renderFuel();
 }
+// ---------- fuel ----------
+const icp = (e8s) => (e8s / 1e8).toLocaleString(undefined, { maximumFractionDigits: 4 }) + " ICP";
+function renderFuel() {
+  if (!info || info.liquid === undefined) return;
+  const spare = Math.max(0, info.liquid - info.floor);
+  const low = spare < 50e9;
+  $("tank-v").textContent = fmt(spare) + " cycles";
+  $("tank-state").textContent = spare === 0 ? "Empty: the chain can't think until someone refuels."
+    : low ? "Running low: a few games left." : "Enough for now. Topping up keeps it that way.";
+  $("tank-state").classList.toggle("low", low);
+  $("tank-bar").style.width = Math.min(100, spare / 1e12 * 100) + "%";
+  const f = info.fuel;
+  $("refuels").innerHTML = !f.refuels ? "No refuels yet. Be the first."
+    : `${f.refuels} refuel${f.refuels === 1 ? "" : "s"} so far: ${icp(f.e8s)} → ${fmt(f.cycles)} cycles<br>` +
+      f.log.slice().reverse().slice(0, 5).map((e) =>
+        `${new Date(e.time_ns / 1e6).toLocaleString([], { dateStyle: "medium", timeStyle: "short" })} · ${icp(e.e8s)} → ${fmt(e.cycles)}`).join("<br>");
+}
+
+function showFuelIfEmpty(e) {
+  if (/out of fuel/.test(e.message)) { refreshInfo(); $("fuel").scrollIntoView({ behavior: "smooth" }); }
+}
+
+async function refuel() {
+  const btn = $("refuel");
+  btn.disabled = true;
+  $("fuel-msg").textContent = "Asking the ICP ledger and the cycles minting canister…";
+  try {
+    const r = await call("POST", "/api/fuel");
+    $("fuel-msg").textContent = r.ok ? `Thank you! ${icp(r.e8s)} became ${fmt(r.cycles)} cycles for everyone.`
+      : r.message.charAt(0).toUpperCase() + r.message.slice(1) + ".";
+    refreshInfo();
+  } catch (e) { $("fuel-msg").textContent = "The refuel failed: " + e.message; }
+  btn.disabled = false;
+}
+
+document.querySelectorAll("[data-copy]").forEach((b) => b.onclick = async () => {
+  try { await navigator.clipboard.writeText($(b.dataset.copy).textContent); b.textContent = "Copied ✓"; }
+  catch (e) { b.textContent = "Select it"; }
+  setTimeout(() => { b.textContent = "Copy"; }, 1600);
+});
+
 async function refreshInfo() {
   try { info = await call("GET", "/api/info"); renderBudget(); } catch (e) {}
 }
@@ -459,7 +546,7 @@ async function start() {
     view = null;
     $("setup").hidden = true;
     afterUpdate();
-  } catch (e) { setStatus("The canister call failed: " + e.message); }
+  } catch (e) { setStatus("The canister call failed: " + e.message); showFuelIfEmpty(e); }
   busy = false; $("start").disabled = false;
 }
 
@@ -492,6 +579,7 @@ async function play(uci, move) {
     game.moves.pop();
     clearInterval(ticker); steps(-1);
     setStatus("The canister refused: " + e.message);
+    showFuelIfEmpty(e);
     render();
   }
   busy = false;
@@ -518,6 +606,7 @@ async function load() {
 }
 
 $("start").onclick = start;
+$("refuel").onclick = refuel;
 $("share-btn").onclick = share;
 $("copy-btn").onclick = copyLink;
 load();
@@ -551,7 +640,7 @@ static const char GAMES_HTML[] = R"HTML(<!doctype html>
   .sub { color: var(--muted); font-size: 14px; margin: 0 0 18px; }
   .mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
 
-  .tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 12px; }
+  .tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 12px; }
   .tile, .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 14px 16px; }
   .tile .k { color: var(--muted); font-size: 12px; text-transform: uppercase; letter-spacing: .08em; }
   .tile .v { font-size: 28px; font-weight: 650; letter-spacing: -.02em; margin-top: 4px; font-variant-numeric: tabular-nums; }
@@ -616,7 +705,8 @@ static const char GAMES_HTML[] = R"HTML(<!doctype html>
     <div class="tile"><div class="k">Moves played</div><div class="v" id="t-moves">–</div><div class="d" id="t-moves-d">&nbsp;</div></div>
     <div class="tile"><div class="k">Positions searched</div><div class="v" id="t-nodes">–</div><div class="d">by Stockfish, on every node of the subnet</div></div>
     <div class="tile"><div class="k">Chess compute used</div><div class="v" id="t-cycles">–</div><div class="d" id="t-cycles-d">&nbsp;</div></div>
-    <div class="tile real"><div class="k">Canister balance · live</div><div class="v" id="t-bal">–</div><div class="d" id="t-bal-d">&nbsp;</div></div>
+    <div class="tile real"><div class="k">Fuel tank · live</div><div class="v" id="t-bal">–</div><div class="d" id="t-bal-d">&nbsp;</div></div>
+    <div class="tile"><div class="k">Fuel received</div><div class="v" id="t-fuel">–</div><div class="d" id="t-fuel-d">&nbsp;</div></div>
   </div>
 
   <div class="panel section">
@@ -657,7 +747,8 @@ static const char GAMES_HTML[] = R"HTML(<!doctype html>
 
   <p class="note">Positions, instructions and moves are recorded by the canister for every move. Cycles and dollars per game are
     estimates from the instruction count (4 cycles per 10 instructions on a 13-node subnet, 1T cycles ≈ $1.35), and cover the chess
-    only; the canister also pays for storage and for serving pages. The balance is the canister's real, live cycle balance.</p>
+    only; the canister also pays for storage and for serving pages. The fuel tank is the canister's real, live balance, minus the reserve
+    it keeps so it never freezes; anyone can top it up with ICP from the <a href="/#fuel">game page</a>.</p>
 </main>
 <script>
 const CYCLES_PER_INSTR_13 = 0.4, USD_PER_TCYCLES = 1.35, DAY_NS = 86400e9, PAGE = 50;
@@ -749,8 +840,11 @@ function render() {
   $("t-nodes").textContent = fmt(nodes);
   $("t-cycles").textContent = "≈ " + fmt(cycles);
   $("t-cycles-d").textContent = `≈ ${usd(cycles)} · ${fmt(instr)} instructions`;
-  $("t-bal").textContent = fmt(data.balance);
-  $("t-bal-d").textContent = `cycles ≈ ${usd(data.balance)} · pays for every move`;
+  const spare = Math.max(0, data.liquid - data.floor);
+  $("t-bal").textContent = fmt(spare);
+  $("t-bal-d").innerHTML = `cycles left to play with · balance ${fmt(data.balance)} · <a href="/#fuel">refuel</a>`;
+  $("t-fuel").textContent = (data.fuel.e8s / 1e8).toLocaleString(undefined, { maximumFractionDigits: 4 }) + " ICP";
+  $("t-fuel-d").textContent = data.fuel.refuels ? `${data.fuel.refuels} refuels → ${fmt(data.fuel.cycles)} cycles` : "no refuels yet";
 
   const counts = { you: 0, chain: 0, draw: 0, open: 0 };
   G.forEach((g) => counts[result(g)[1]]++);

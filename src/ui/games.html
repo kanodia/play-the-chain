@@ -23,7 +23,7 @@
   .sub { color: var(--muted); font-size: 14px; margin: 0 0 18px; }
   .mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
 
-  .tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 12px; }
+  .tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 12px; }
   .tile, .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 14px 16px; }
   .tile .k { color: var(--muted); font-size: 12px; text-transform: uppercase; letter-spacing: .08em; }
   .tile .v { font-size: 28px; font-weight: 650; letter-spacing: -.02em; margin-top: 4px; font-variant-numeric: tabular-nums; }
@@ -88,7 +88,8 @@
     <div class="tile"><div class="k">Moves played</div><div class="v" id="t-moves">–</div><div class="d" id="t-moves-d">&nbsp;</div></div>
     <div class="tile"><div class="k">Positions searched</div><div class="v" id="t-nodes">–</div><div class="d">by Stockfish, on every node of the subnet</div></div>
     <div class="tile"><div class="k">Chess compute used</div><div class="v" id="t-cycles">–</div><div class="d" id="t-cycles-d">&nbsp;</div></div>
-    <div class="tile real"><div class="k">Canister balance · live</div><div class="v" id="t-bal">–</div><div class="d" id="t-bal-d">&nbsp;</div></div>
+    <div class="tile real"><div class="k">Fuel tank · live</div><div class="v" id="t-bal">–</div><div class="d" id="t-bal-d">&nbsp;</div></div>
+    <div class="tile"><div class="k">Fuel received</div><div class="v" id="t-fuel">–</div><div class="d" id="t-fuel-d">&nbsp;</div></div>
   </div>
 
   <div class="panel section">
@@ -129,7 +130,8 @@
 
   <p class="note">Positions, instructions and moves are recorded by the canister for every move. Cycles and dollars per game are
     estimates from the instruction count (4 cycles per 10 instructions on a 13-node subnet, 1T cycles ≈ $1.35), and cover the chess
-    only; the canister also pays for storage and for serving pages. The balance is the canister's real, live cycle balance.</p>
+    only; the canister also pays for storage and for serving pages. The fuel tank is the canister's real, live balance, minus the reserve
+    it keeps so it never freezes; anyone can top it up with ICP from the <a href="/#fuel">game page</a>.</p>
 </main>
 <script>
 const CYCLES_PER_INSTR_13 = 0.4, USD_PER_TCYCLES = 1.35, DAY_NS = 86400e9, PAGE = 50;
@@ -221,8 +223,11 @@ function render() {
   $("t-nodes").textContent = fmt(nodes);
   $("t-cycles").textContent = "≈ " + fmt(cycles);
   $("t-cycles-d").textContent = `≈ ${usd(cycles)} · ${fmt(instr)} instructions`;
-  $("t-bal").textContent = fmt(data.balance);
-  $("t-bal-d").textContent = `cycles ≈ ${usd(data.balance)} · pays for every move`;
+  const spare = Math.max(0, data.liquid - data.floor);
+  $("t-bal").textContent = fmt(spare);
+  $("t-bal-d").innerHTML = `cycles left to play with · balance ${fmt(data.balance)} · <a href="/#fuel">refuel</a>`;
+  $("t-fuel").textContent = (data.fuel.e8s / 1e8).toLocaleString(undefined, { maximumFractionDigits: 4 }) + " ICP";
+  $("t-fuel-d").textContent = data.fuel.refuels ? `${data.fuel.refuels} refuels → ${fmt(data.fuel.cycles)} cycles` : "no refuels yet";
 
   const counts = { you: 0, chain: 0, draw: 0, open: 0 };
   G.forEach((g) => counts[result(g)[1]]++);

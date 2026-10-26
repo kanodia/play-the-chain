@@ -8,6 +8,7 @@
 #include <string>
 
 #include "engine.h"
+#include "fuel.h"
 #include "games.h"
 #include "ic_api.h"
 #include "ui_html.h"
@@ -49,6 +50,14 @@ static bool budget_left() {
   roll_day();
   return g_used_today < DAILY_HARD_LIMIT;
 }
+
+// The shared fuel tank is nearly empty: no more engine moves until a refuel.
+static bool out_of_fuel(IC_API &ic_api) {
+  return ic_api.get_canister_liquid_cycle_balance() < FUEL_FLOOR;
+}
+
+static const char *OUT_OF_FUEL =
+    "the chain is out of fuel: send ICP to the canister, then press Refuel";
 
 // Past the daily budget, searches are cut down to a quick reply.
 static bool quick_mode() { return g_used_today >= DAILY_BUDGET; }
@@ -93,6 +102,7 @@ void bestmove() {
 
   if (depth < 1 || depth > MAX_DEPTH) IC_API::trap("depth must be 1..20");
   if (!budget_left()) IC_API::trap("daily budget used up, back at 00:00 UTC");
+  if (out_of_fuel(ic_api)) IC_API::trap(OUT_OF_FUEL);
 
   EngineResult res;
   uint64_t used{0};
@@ -124,6 +134,8 @@ void new_game() {
 //   GET  /api/game/<id>         a game with a receipt for every engine move
 //   POST /api/game              body "<depth>\n<w|b>"  -> new game
 //   POST /api/game/<id>/move    body "<key>\n<uci>"    -> the engine replies
+//   POST /api/fuel                                     -> turn ICP sent to the
+//                                                         canister into cycles
 
 static std::string path_of(const std::string &url) {
   return url.substr(0, url.find('?'));
@@ -218,6 +230,39 @@ static void engine_reply(Game &g) {
   g_used_today += p.instructions;
 }
 
+static std::string u128(__uint128_t v) {
+  if (v == 0) return "0";
+  std::string out;
+  while (v) { out.insert(out.begin(), char('0' + int(v % 10))); v /= 10; }
+  return out;
+}
+
+// The tank: cycles, the accounts to send ICP to, and every refuel.
+static std::string fuel_json(IC_API &ic_api) {
+  std::vector<FuelEntry> log = fuel_log();
+  __uint128_t cycles{0};
+  uint64_t e8s{0};
+  std::string entries;
+  for (size_t i = 0; i < log.size(); ++i) {
+    cycles += log[i].cycles;
+    e8s += log[i].e8s;
+    if (i + 20 < log.size()) continue; // the last 20
+    if (!entries.empty()) entries += ",";
+    entries += "{\"time_ns\":" + std::to_string(log[i].time_ns) +
+               ",\"e8s\":" + std::to_string(log[i].e8s) +
+               ",\"block\":" + std::to_string(log[i].block) +
+               ",\"cycles\":" + u128(log[i].cycles) + "}";
+  }
+  return "\"balance\":" + u128(ic_api.get_canister_self_cycle_balance()) +
+         ",\"liquid\":" + u128(ic_api.get_canister_liquid_cycle_balance()) +
+         ",\"floor\":" + std::to_string(FUEL_FLOOR) +
+         ",\"fuel\":{\"principal\":\"" + FUEL_PRINCIPAL +
+         "\",\"account\":\"" + FUEL_ACCOUNT +
+         "\",\"refuels\":" + std::to_string(log.size()) +
+         ",\"e8s\":" + std::to_string(e8s) + ",\"cycles\":" + u128(cycles) +
+         ",\"log\":[" + entries + "]}";
+}
+
 static IC_HttpResponse api_info(IC_API &ic_api) {
   roll_day();
   return json("{\"canister\":\"" + ic_api.get_canister_self().get_text() +
@@ -229,14 +274,8 @@ static IC_HttpResponse api_info(IC_API &ic_api) {
               ",\"used_today\":" + std::to_string(g_used_today) +
               ",\"budget\":" + std::to_string(DAILY_BUDGET) +
               ",\"hard_limit\":" + std::to_string(DAILY_HARD_LIMIT) +
-              ",\"quick_depth\":" + std::to_string(QUICK_DEPTH) + "}");
-}
-
-static std::string u128(__uint128_t v) {
-  if (v == 0) return "0";
-  std::string out;
-  while (v) { out.insert(out.begin(), char('0' + int(v % 10))); v /= 10; }
-  return out;
+              ",\"quick_depth\":" + std::to_string(QUICK_DEPTH) + "," +
+              fuel_json(ic_api) + "}");
 }
 
 // One summary per game, oldest first. A game is about 50k instructions to
@@ -244,7 +283,7 @@ static std::string u128(__uint128_t v) {
 static IC_HttpResponse api_games(IC_API &ic_api) {
   roll_day();
   uint64_t n = games_count();
-  std::string out = "{\"balance\":" + u128(ic_api.get_canister_self_cycle_balance()) +
+  std::string out = "{" + fuel_json(ic_api) +
                     ",\"nodes\":" + std::to_string(ic_api.get_subnet_node_count()) +
                     ",\"used_today\":" + std::to_string(g_used_today) +
                     ",\"budget\":" + std::to_string(DAILY_BUDGET) +
@@ -287,7 +326,7 @@ static IC_HttpResponse api_games(IC_API &ic_api) {
   return json(out + "]}");
 }
 
-static IC_HttpResponse api_new_game(const std::string &body) {
+static IC_HttpResponse api_new_game(IC_API &ic_api, const std::string &body) {
   size_t nl = body.find('\n');
   int depth = std::atoi(body.substr(0, nl).c_str());
   char human = nl == std::string::npos || nl + 1 >= body.size() ? 'w' : body[nl + 1];
@@ -295,6 +334,7 @@ static IC_HttpResponse api_new_game(const std::string &body) {
     return error(400, "send <depth 1-20>\\n<w|b>");
   if (!budget_left() || g_games_today >= MAX_GAMES_PER_DAY)
     return error(429, "today's on-chain budget is used up, back at 00:00 UTC");
+  if (out_of_fuel(ic_api)) return error(503, OUT_OF_FUEL);
   ++g_games_today;
 
   Game g = game_new(depth, human, IC_API::time());
@@ -303,7 +343,8 @@ static IC_HttpResponse api_new_game(const std::string &body) {
   return json(game_json(g, true));
 }
 
-static IC_HttpResponse api_move(uint64_t id, const std::string &body) {
+static IC_HttpResponse api_move(IC_API &ic_api, uint64_t id,
+                                const std::string &body) {
   Game g;
   if (!game_load(id, g)) return error(404, "no such game");
 
@@ -320,6 +361,7 @@ static IC_HttpResponse api_move(uint64_t id, const std::string &body) {
   if (g.plies.size() + 2 > MAX_PLIES) return error(409, "the game is too long");
   if (!budget_left())
     return error(429, "today's on-chain budget is used up, back at 00:00 UTC");
+  if (out_of_fuel(ic_api)) return error(503, OUT_OF_FUEL);
 
   std::vector<std::string> moves = g.moves();
   moves.push_back(uci);
@@ -350,8 +392,10 @@ void http_request() {
   ic_api.to_wire(response);
 }
 
-void http_request_update() {
-  IC_API ic_api(CanisterUpdate{std::string(__func__)}, false);
+// A coroutine, because POST /api/fuel calls the ICP ledger and the CMC before
+// it replies; every other route replies straight away.
+static IC_Async http_request_update_async() {
+  IC_API ic_api(CanisterUpdate{"http_request_update"}, false);
   IC_HttpUpdateRequest request;
   ic_api.from_wire(request);
 
@@ -360,6 +404,12 @@ void http_request_update() {
   std::string body(request.body.begin(), request.body.end());
   uint64_t id{0};
   std::string rest;
+
+  if (method == "POST" && path == "/api/fuel") {
+    std::string out = co_await refuel(ic_api.get_canister_self());
+    ic_api.to_wire(json(out));
+    co_return;
+  }
 
   IC_HttpResponse response = error(404, "not found");
   if (method == "GET" &&
@@ -376,10 +426,12 @@ void http_request_update() {
     Game g;
     if (game_load(id, g)) response = json(game_json(g, false));
   } else if (method == "POST" && path == "/api/game") {
-    response = api_new_game(body);
+    response = api_new_game(ic_api, body);
   } else if (method == "POST" && parse_id(path, "/api/game/", id, rest) &&
              rest == "/move") {
-    response = api_move(id, body);
+    response = api_move(ic_api, id, body);
   }
   ic_api.to_wire(response);
 }
+
+void http_request_update() { http_request_update_async(); }

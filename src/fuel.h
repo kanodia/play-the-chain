@@ -1,0 +1,36 @@
+#pragma once
+
+#include <cstdint>
+#include <string>
+#include <vector>
+
+#include "ic_api.h"
+#include "ic_async.h"
+
+// The shared fuel tank. Anyone sends ICP to the canister's own ledger account
+// (from funnAI, the NNS app or an exchange); refuel() hands it to the cycles
+// minting canister, which tops this canister up with cycles. No credits and no
+// accounts: the cycles pay for everybody's moves.
+
+// The canister's principal and ICP account, to send ICP to.
+extern const char *FUEL_PRINCIPAL;
+extern const char *FUEL_ACCOUNT;
+
+// Below this many liquid cycles (spendable above the freezing threshold) the
+// engine stops playing, so the canister never freezes and the page can still
+// ask for fuel.
+constexpr uint64_t FUEL_FLOOR = 20'000'000'000;
+
+struct FuelEntry {
+  uint64_t time_ns = 0;
+  uint64_t e8s = 0;   // ICP converted, after the ledger fee
+  uint64_t block = 0; // the ICP ledger block of the payment to the CMC
+  __uint128_t cycles = 0;
+};
+
+// Every refuel, oldest first. Kept in stable memory.
+std::vector<FuelEntry> fuel_log();
+
+// Looks for ICP on the canister's account and turns it into cycles. Returns
+// the outcome as a JSON object.
+IC_Task<std::string> refuel(CandidTypePrincipal self);
