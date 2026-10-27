@@ -1,0 +1,391 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Chain Golf</title>
+<meta name="description" content="One hole a day. Every shot is simulated by Box2D inside an Internet Computer canister, on 13 computers, so nobody can fake a score.">
+<style>
+  :root {
+    --bg: #0b0d12; --panel: #141821; --panel2: #10131a; --line: #232938; --text: #e8ecf3; --muted: #8b93a7;
+    --accent: #5ef2c8; --accent-dim: rgba(94,242,200,.14); --warn: #ffd666;
+    --sky1: #0f1a2b; --sky2: #16263a; --turf: #2f7d53; --turf2: #24603f; --soil: #1b2a22; --wood: #b98a56;
+  }
+  * { box-sizing: border-box; }
+  [hidden] { display: none !important; }
+  body { margin: 0; background: var(--bg); color: var(--text);
+    font: 15px/1.45 ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif; }
+  a { color: var(--accent); }
+  main { max-width: 1120px; margin: 0 auto; padding: 22px 16px 48px; }
+  header { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; margin-bottom: 6px; }
+  h1 { margin: 0; font-size: 26px; letter-spacing: -.02em; }
+  h1 span { color: var(--accent); }
+  header nav { margin-left: auto; display: flex; gap: 14px; font-size: 14px; }
+  .sub { color: var(--muted); font-size: 14px; margin: 0 0 14px; max-width: 760px; }
+  .stage { position: relative; border: 1px solid var(--line); border-radius: 12px; overflow: hidden; background: var(--sky1); }
+  canvas { display: block; width: 100%; height: clamp(260px, 48vw, 460px); touch-action: none; cursor: crosshair; }
+  .hud { position: absolute; left: 12px; top: 10px; font-size: 13px; color: var(--muted); pointer-events: none; }
+  .hud b { color: var(--text); }
+  .thinking { position: absolute; inset: auto 12px 12px auto; background: rgba(16,19,26,.85); border: 1px solid var(--line);
+    border-radius: 8px; padding: 6px 10px; font-size: 13px; color: var(--accent); }
+  .layout { display: grid; grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr); gap: 14px; margin-top: 14px; }
+  @media (max-width: 820px) { .layout { grid-template-columns: minmax(0, 1fr); } }
+  .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 16px; }
+  .panel + .panel { margin-top: 14px; }
+  .label { color: var(--muted); font-size: 12px; text-transform: uppercase; letter-spacing: .08em; margin-bottom: 10px;
+    display: flex; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
+  .status { font-size: 17px; font-weight: 600; min-height: 1.45em; }
+  .status.busy { color: var(--accent); }
+  .row { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 12px; align-items: center; }
+  button, input[type=text] { font: inherit; color: var(--text); background: #1c2230; border: 1px solid var(--line);
+    border-radius: 8px; padding: 8px 12px; }
+  button { cursor: pointer; }
+  button:hover { border-color: var(--accent); }
+  button.primary { background: var(--accent); color: #062a20; border-color: var(--accent); font-weight: 600; }
+  button:disabled { opacity: .5; cursor: default; }
+  input[type=text] { width: 180px; }
+  .aim { display: grid; grid-template-columns: max-content minmax(0, 1fr) 4.5em; gap: 8px 12px; align-items: center; margin-top: 12px; font-size: 14px; }
+  .aim output { font-variant-numeric: tabular-nums; text-align: right; color: var(--muted); }
+  input[type=range] { width: 100%; accent-color: #5ef2c8; }
+  .kv { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 4px 12px; margin-top: 12px;
+    font: 12px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace; border-left: 2px solid rgba(94,242,200,.45); padding-left: 12px; }
+  .kv dt { color: var(--muted); } .kv dd { margin: 0; overflow-wrap: anywhere; }
+  ol.board { margin: 0; padding-left: 22px; font-variant-numeric: tabular-nums; }
+  ol.board li { padding: 3px 0; } ol.board li span { color: var(--muted); }
+  .shots { font: 12.5px/1.7 ui-monospace, SFMono-Regular, Menlo, monospace; color: var(--muted); }
+  .shots .ok { color: var(--accent); }
+  .share { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 12px; }
+  .share a { color: var(--text); background: #1c2230; border: 1px solid var(--line); border-radius: 8px; padding: 8px 12px; text-decoration: none; font-size: 14px; }
+  .banner { background: var(--accent-dim); border: 1px solid rgba(94,242,200,.35); border-radius: 10px; padding: 10px 12px; font-size: 14px; margin-top: 12px; }
+  .note { color: var(--muted); font-size: 12.5px; margin-top: 14px; max-width: 820px; }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <h1>Chain <span>Golf</span></h1>
+    <nav><a href="/">♟ Chess</a><a href="/games">All games</a><a href="/#fuel">⛽ Fuel</a></nav>
+  </header>
+  <p class="sub">One hole a day. Every shot is simulated by <b>Box2D</b>, the C++ physics engine behind Angry Birds, running inside
+    an Internet Computer canister on 13 computers. Your browser only draws what the chain computed, so nobody can fake a score.</p>
+
+  <div class="stage">
+    <canvas id="c" aria-label="The golf hole"></canvas>
+    <div class="hud" id="hud"></div>
+    <div class="thinking" id="thinking" hidden>⛓ 13 computers are simulating your shot…</div>
+  </div>
+
+  <div class="layout">
+    <div>
+      <div class="panel">
+        <div id="status" class="status">Loading today's hole from the canister…</div>
+        <div id="setup" class="row" hidden>
+          <input id="name" type="text" maxlength="16" placeholder="Your name (optional)" aria-label="Your name for the leaderboard">
+          <button id="start" class="primary">Tee off</button>
+        </div>
+        <div id="controls" hidden>
+          <div class="aim">
+            <label for="angle">Angle</label><input id="angle" type="range" min="0" max="180" step="0.5" value="40"><output id="angle-v"></output>
+            <label for="power">Power</label><input id="power" type="range" min="1" max="100" step="0.5" value="45"><output id="power-v"></output>
+          </div>
+          <div class="row"><button id="shoot" class="primary">Shoot</button>
+            <span class="note" style="margin:0">or drag back from the ball, like a slingshot</span></div>
+        </div>
+        <div id="spectator" class="banner" hidden></div>
+        <div id="share" class="share" hidden>
+          <button id="share-btn" class="primary">Share</button>
+          <button id="copy-btn">Copy link</button>
+          <a id="share-x" target="_blank" rel="noopener">Post on X</a>
+          <a id="share-wa" target="_blank" rel="noopener">WhatsApp</a>
+        </div>
+        <dl class="kv" id="receipt" hidden></dl>
+      </div>
+      <div class="panel">
+        <div class="label"><span>Shots · each one can be recomputed on-chain</span><button id="verify" hidden>Recompute all on-chain</button></div>
+        <div class="shots" id="shots">No shots yet.</div>
+      </div>
+    </div>
+    <div>
+      <div class="panel">
+        <div class="label"><span>Today's leaderboard</span><span id="lb-stats"></span></div>
+        <ol class="board" id="board"></ol>
+      </div>
+      <p class="note">Shots are paid from the same shared fuel tank as the chess. A shot is a few million instructions, about a
+        thousandth of one chess move. Out of bounds costs a penalty stroke and puts the ball back. Each round has its own link:
+        open it and press <i>Recompute</i> to watch the canister simulate every shot again and check it lands in exactly the same place.</p>
+    </div>
+  </div>
+</main>
+<script>
+const $ = (id) => document.getElementById(id);
+const fmt = (n) => n >= 1e9 ? (n / 1e9).toFixed(2) + "B" : n >= 1e6 ? (n / 1e6).toFixed(1) + "M" : n >= 1e3 ? (n / 1e3).toFixed(1) + "k" : String(n);
+const KEY = (id) => "golf_key_" + id, MINE = (day) => "golf_round_" + day;
+const store = (k, v) => { try { localStorage.setItem(k, v); } catch (e) {} };
+const read = (k) => { try { return localStorage.getItem(k); } catch (e) { return null; } };
+
+let course = null, round = null, key = null, ball = null, trail = [], busy = false, aiming = null, cam = { x: 0 };
+
+async function call(method, path, body) {
+  const res = await fetch(path, { method, body });
+  const data = await res.json().catch(() => ({ error: "HTTP " + res.status }));
+  if (!res.ok) throw new Error(data.error || "HTTP " + res.status);
+  return data;
+}
+
+// ---------- drawing ----------
+const cv = $("c"), ctx = cv.getContext("2d");
+function view() {
+  const w = cv.clientWidth, h = cv.clientHeight;
+  const span = Math.min(64, Math.max(22, w / 16)); // metres across
+  const s = w / span;
+  const ys = course.ground.map((p) => p[1]);
+  const midY = (Math.min(...ys) + Math.max(...ys)) / 2 + 2;
+  const x0 = Math.max(-2, Math.min(62 - span, cam.x - span / 2));
+  return { s, x0, toX: (x) => (x - x0) * s, toY: (y) => h / 2 - (y - midY) * s, fromX: (px) => px / s + x0, fromY: (py) => midY - (py - h / 2) / s };
+}
+
+function draw() {
+  if (!course) return;
+  const dpr = window.devicePixelRatio || 1;
+  if (cv.width !== cv.clientWidth * dpr) { cv.width = cv.clientWidth * dpr; cv.height = cv.clientHeight * dpr; }
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  const w = cv.clientWidth, h = cv.clientHeight, v = view();
+  const sky = ctx.createLinearGradient(0, 0, 0, h); sky.addColorStop(0, "#0f1a2b"); sky.addColorStop(1, "#1b2d44");
+  ctx.fillStyle = sky; ctx.fillRect(0, 0, w, h);
+
+  // ground
+  ctx.beginPath(); ctx.moveTo(v.toX(course.ground[0][0]), h);
+  for (const [x, y] of course.ground) ctx.lineTo(v.toX(x), v.toY(y));
+  ctx.lineTo(v.toX(course.ground[course.ground.length - 1][0]), h); ctx.closePath();
+  const turf = ctx.createLinearGradient(0, 0, 0, h); turf.addColorStop(0, "#2f7d53"); turf.addColorStop(1, "#173a28");
+  ctx.fillStyle = turf; ctx.fill();
+  ctx.strokeStyle = "#5fbf86"; ctx.lineWidth = 2; ctx.beginPath();
+  course.ground.forEach(([x, y], i) => i ? ctx.lineTo(v.toX(x), v.toY(y)) : ctx.moveTo(v.toX(x), v.toY(y))); ctx.stroke();
+
+  // obstacles
+  for (const b of course.boxes) {
+    ctx.save(); ctx.translate(v.toX(b.x), v.toY(b.y)); ctx.rotate(-b.angle);
+    ctx.fillStyle = "#b98a56"; ctx.strokeStyle = "#6e4f2e"; ctx.lineWidth = 1.5;
+    ctx.fillRect(-b.half_w * v.s, -b.half_h * v.s, 2 * b.half_w * v.s, 2 * b.half_h * v.s);
+    ctx.strokeRect(-b.half_w * v.s, -b.half_h * v.s, 2 * b.half_w * v.s, 2 * b.half_h * v.s);
+    ctx.restore();
+  }
+
+  // cup and flag
+  const cx = v.toX(course.cup.x), cy = v.toY(course.cup.y);
+  ctx.strokeStyle = "#e8ecf3"; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(cx, cy); ctx.lineTo(cx, cy - 2.4 * v.s); ctx.stroke();
+  ctx.fillStyle = "#ff6b6b"; ctx.beginPath(); ctx.moveTo(cx, cy - 2.4 * v.s); ctx.lineTo(cx + 0.9 * v.s, cy - 2.1 * v.s); ctx.lineTo(cx, cy - 1.8 * v.s); ctx.fill();
+
+  // trail and ball
+  if (trail.length > 1) {
+    ctx.strokeStyle = "rgba(94,242,200,.55)"; ctx.lineWidth = 2; ctx.setLineDash([4, 5]); ctx.beginPath();
+    trail.forEach(([x, y], i) => i ? ctx.lineTo(v.toX(x), v.toY(y)) : ctx.moveTo(v.toX(x), v.toY(y))); ctx.stroke(); ctx.setLineDash([]);
+  }
+  if (ball) {
+    const r = Math.max(4, course.ball_radius * v.s);
+    ctx.fillStyle = "#fff"; ctx.strokeStyle = "#0b0d12"; ctx.lineWidth = 1.5;
+    ctx.beginPath(); ctx.arc(v.toX(ball.x), v.toY(ball.y), r, 0, 6.2832); ctx.fill(); ctx.stroke();
+    if (canShoot()) drawAim(v);
+  }
+}
+
+function drawAim(v) {
+  const a = +$("angle").value * Math.PI / 180, p = +$("power").value;
+  const len = (0.6 + p / 100 * 4.5) * v.s, bx = v.toX(ball.x), by = v.toY(ball.y);
+  const ex = bx + Math.cos(a) * len, ey = by - Math.sin(a) * len;
+  ctx.strokeStyle = "#ffd666"; ctx.lineWidth = 3; ctx.beginPath(); ctx.moveTo(bx, by); ctx.lineTo(ex, ey); ctx.stroke();
+  ctx.fillStyle = "#ffd666"; ctx.beginPath();
+  ctx.arc(ex, ey, 4, 0, 6.2832); ctx.fill();
+}
+
+// ---------- aiming ----------
+const canShoot = () => round && key && round.status === "playing" && !busy;
+function syncAim() { $("angle-v").textContent = (+$("angle").value).toFixed(1) + "°"; $("power-v").textContent = (+$("power").value).toFixed(0) + "%"; draw(); }
+$("angle").oninput = syncAim; $("power").oninput = syncAim;
+
+// A shot from the canvas needs a real drag: a tap, or a press that never
+// moves, only cancels.
+cv.addEventListener("pointerdown", (e) => {
+  if (!canShoot() || e.button !== 0) return;
+  aiming = { x: e.clientX, y: e.clientY, dragged: false };
+  cv.setPointerCapture(e.pointerId);
+});
+cv.addEventListener("pointermove", (e) => {
+  if (!aiming) return;
+  if (Math.hypot(e.clientX - aiming.x, e.clientY - aiming.y) > 12) aiming.dragged = true;
+  if (aiming.dragged) aimFrom(e);
+});
+cv.addEventListener("pointerup", () => { const a = aiming; aiming = null; if (a && a.dragged) shoot(); });
+cv.addEventListener("pointercancel", () => { aiming = null; });
+function aimFrom(e) {
+  const r = cv.getBoundingClientRect(), v = view();
+  const dx = ball.x - v.fromX(e.clientX - r.left), dy = ball.y - v.fromY(e.clientY - r.top); // pull back to shoot forward
+  let ang = Math.atan2(dy, dx) * 180 / Math.PI;
+  if (ang < 0) ang = dx >= 0 ? 0 : 180;
+  $("angle").value = Math.min(180, ang).toFixed(1);
+  $("power").value = Math.max(1, Math.min(100, Math.hypot(dx, dy) / 5 * 100)).toFixed(1);
+  syncAim();
+}
+
+// ---------- flow ----------
+function setStatus(t, isBusy = false) { $("status").textContent = t; $("status").classList.toggle("busy", isBusy); }
+
+function hud() {
+  if (!course) return;
+  const date = new Date(course.day * 86400e3).toLocaleDateString([], { month: "short", day: "numeric", timeZone: "UTC" });
+  $("hud").innerHTML = `Hole of <b>${date}</b> · par <b>${course.par}</b>` + (round ? ` · strokes <b>${round.strokes}</b>` : "");
+}
+
+function renderBoard(lb) {
+  $("lb-stats").textContent = `${lb.played} played · ${lb.holed} holed${lb.aces ? ` · ${lb.aces} ace${lb.aces > 1 ? "s" : ""}` : ""}`;
+  $("board").innerHTML = lb.top.length ? lb.top.map((e) =>
+    `<li><a href="/golf/${e.id}">${e.name}</a> <span>· ${e.strokes} stroke${e.strokes > 1 ? "s" : ""}${round && e.id === round.id ? " · you" : ""}</span></li>`).join("")
+    : `<li style="list-style:none;margin-left:-22px;color:var(--muted)">Nobody has holed it yet today.</li>`;
+}
+
+function renderShots(checks = {}) {
+  if (!round || !round.shots.length) { $("shots").textContent = "No shots yet."; $("verify").hidden = true; return; }
+  $("shots").innerHTML = round.shots.map((s, i) =>
+    `${i + 1}. ${s.angle.toFixed(1)}° at ${s.power.toFixed(0)}% → ${s.how === "holed" ? "in the cup ⛳" : s.how === "out" ? "out of bounds (+1)" : `rests at ${s.end.x.toFixed(1)} m`}` +
+    ` · ${fmt(s.instructions)} instr` + (checks[i] === true ? ` <span class="ok">✓ recomputed, identical</span>` : checks[i] === false ? ` ✗ differs` : checks[i] === "…" ? " …" : "")).join("<br>");
+  $("verify").hidden = false;
+}
+
+function statusText() {
+  if (!round) return "Press Tee off to start your round.";
+  if (round.status === "holed") return round.strokes === 1 ? "Hole in one! The chain saw it." : `In the cup in ${round.strokes}. ${round.strokes <= course.par ? "Nice." : ""}`;
+  if (round.status === "gave_up") return "Out of shots for this round.";
+  if (!key) return `${round.name}'s round · ${round.strokes} stroke${round.strokes === 1 ? "" : "s"} so far`;
+  return round.shots.length ? "Line up the next one." : "Aim, then shoot. The canister will simulate it.";
+}
+
+function after() {
+  ball = { ...round.ball };
+  cam.x = ball.x;
+  setStatus(statusText());
+  $("controls").hidden = !canShoot();
+  $("setup").hidden = true;
+  const done = round.status !== "playing";
+  $("share").hidden = !(round.shots.length);
+  updateShare();
+  renderShots(); hud(); draw();
+  if (done) refreshBoard();
+}
+
+async function refreshBoard() {
+  try { const t = await call("GET", "/api/golf/today"); renderBoard(t.leaderboard); } catch (e) {}
+}
+
+async function start() {
+  $("start").disabled = true;
+  setStatus("Creating your round on-chain…", true);
+  try {
+    round = await call("POST", "/api/golf/round", $("name").value);
+    key = round.key; store(KEY(round.id), key); store(MINE(round.day), String(round.id));
+    history.replaceState(null, "", "/golf/" + round.id);
+    after();
+  } catch (e) { setStatus("The canister refused: " + e.message); }
+  $("start").disabled = false;
+}
+
+function animate(frames) {
+  return new Promise((done) => {
+    trail = []; let i = 0;
+    const tick = () => {
+      if (i >= frames.length) return done();
+      const [x, y] = frames[i++]; ball = { x, y }; trail.push([x, y]); cam.x = x; draw();
+      requestAnimationFrame(tick);
+    };
+    tick();
+  });
+}
+
+async function shoot() {
+  if (!canShoot()) return;
+  busy = true; $("shoot").disabled = true; $("thinking").hidden = false; draw();
+  setStatus("The canister is simulating your shot…", true);
+  try {
+    const r = await call("POST", `/api/golf/round/${round.id}/shot`, `${key}\n${$("angle").value}\n${$("power").value}`);
+    $("thinking").hidden = true;
+    await animate(r.frames);
+    round = r.round;
+    const s = round.shots[round.shots.length - 1];
+    $("receipt").hidden = false;
+    $("receipt").innerHTML = `<dt>shot</dt><dd>${s.angle.toFixed(1)}° · ${s.power.toFixed(0)}% · ${s.how}</dd>
+      <dt>physics</dt><dd>Box2D 2.4.2 · ${r.frames.length * 2} steps at 60 Hz</dd>
+      <dt>instructions</dt><dd>${s.instructions.toLocaleString()}</dd>
+      <dt>executed</dt><dd>replicated on 13 nodes, via consensus</dd>
+      <dt>stored</dt><dd>/golf_round_${round.id}.txt · stable memory</dd>`;
+  } catch (e) { $("thinking").hidden = true; setStatus("The canister refused: " + e.message); }
+  busy = false; $("shoot").disabled = false;
+  if (round) after();
+}
+$("shoot").onclick = shoot;
+$("start").onclick = start;
+
+// Re-simulates every shot on-chain and checks each lands where the round says.
+$("verify").onclick = async () => {
+  $("verify").disabled = true;
+  const checks = {};
+  for (let i = 0; i < round.shots.length; i++) {
+    checks[i] = "…"; renderShots(checks);
+    try {
+      const r = await call("GET", `/api/golf/round/${round.id}/shot/${i}`);
+      await animate(r.frames);
+      checks[i] = r.matches;
+    } catch (e) { checks[i] = undefined; setStatus("Recompute failed: " + e.message); break; }
+    renderShots(checks);
+  }
+  ball = { ...round.ball }; draw();
+  $("verify").disabled = false;
+};
+
+// ---------- share ----------
+const shareUrl = () => location.origin + "/golf/" + round.id;
+function shareText() {
+  if (round.status === "holed") return round.strokes === 1
+    ? "Hole in one on today's Chain Golf ⛳ Every shot was simulated by Box2D on 13 computers, so it's real. Beat that:"
+    : `I holed today's Chain Golf in ${round.strokes} ⛳ Every shot was simulated by Box2D on 13 computers, so nobody can fake it. Beat me:`;
+  return "Playing Chain Golf: every shot is simulated by Box2D inside an Internet Computer canister ⛳⛓";
+}
+function updateShare() {
+  if (!round) return;
+  $("share-x").href = "https://x.com/intent/post?text=" + encodeURIComponent(shareText()) + "&url=" + encodeURIComponent(shareUrl());
+  $("share-wa").href = "https://wa.me/?text=" + encodeURIComponent(shareText() + " " + shareUrl());
+  $("share-btn").hidden = !navigator.share;
+}
+$("share-btn").onclick = async () => { try { await navigator.share({ title: "Chain Golf", text: shareText(), url: shareUrl() }); } catch (e) {} };
+$("copy-btn").onclick = async () => {
+  try { await navigator.clipboard.writeText(shareUrl()); $("copy-btn").textContent = "Copied ✓"; } catch (e) { $("copy-btn").textContent = shareUrl(); return; }
+  setTimeout(() => { $("copy-btn").textContent = "Copy link"; }, 1600);
+};
+
+// ---------- load ----------
+async function load() {
+  syncAim();
+  const m = location.pathname.match(/^\/golf\/(\d+)$/);
+  try {
+    const t = await call("GET", "/api/golf/today");
+    renderBoard(t.leaderboard);
+    if (!m) {
+      course = t.course; ball = { ...course.tee }; cam.x = ball.x; hud(); draw();
+      const mine = read(MINE(course.day));
+      if (mine) { location.replace("/golf/" + mine); return; }
+      $("setup").hidden = false; setStatus("Today's hole is ready. Press Tee off.");
+      return;
+    }
+    const r = await call("GET", "/api/golf/round/" + m[1]);
+    course = r.course; round = r.round; key = read(KEY(round.id));
+    if (!key || round.day !== t.course.day) {
+      key = null;
+      $("spectator").hidden = false;
+      $("spectator").innerHTML = `You're watching ${round.name}'s round. Press <b>Recompute all on-chain</b> to have the canister simulate every shot again. <a href="/golf">Play today's hole</a>.`;
+    }
+    after();
+  } catch (e) { setStatus("Could not reach the canister: " + e.message); }
+}
+window.addEventListener("resize", draw);
+load();
+</script>
+</body>
+</html>

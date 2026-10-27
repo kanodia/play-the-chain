@@ -41,6 +41,18 @@ side: in plain words, and as what actually runs.
   strength, then quick depth-8 replies until 250B, then HTTP 429 until
   00:00 UTC.
 
+## Chain Golf
+
+`/golf` is one hole a day, and every shot is simulated by
+[Box2D](https://box2d.org) 2.4.2 (C++, MIT, vendored unchanged in `src/box2d`)
+inside the canister. The browser sends only an angle and a power; the canister
+runs the physics at 60 Hz until the ball stops, sinks or goes out, stores the
+shot with its exact inputs, and returns the path to animate. So a score can't
+be faked, and `GET /api/golf/round/<id>/shot/<n>` simulates any shot again and
+reports whether it lands in exactly the same place. The hole of the day is
+generated from the date, so everybody plays the same one. Shots share the
+daily budget and the fuel tank with the chess.
+
 ## API
 
 | Route | |

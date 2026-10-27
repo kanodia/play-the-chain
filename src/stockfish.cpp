@@ -4,12 +4,15 @@
 #include "stockfish.h"
 
 #include <algorithm>
+#include <cmath>
 #include <cstdlib>
+#include <sstream>
 #include <string>
 
 #include "engine.h"
 #include "fuel.h"
 #include "games.h"
+#include "golf.h"
 #include "ic_api.h"
 #include "ui_html.h"
 
@@ -35,7 +38,9 @@ constexpr uint64_t QUICK_NODES = 20'000;
 constexpr uint64_t MAX_GAMES_PER_DAY = 300;
 constexpr size_t MAX_PLIES = 600;
 
-static uint64_t g_day = 0, g_used_today = 0, g_games_today = 0;
+constexpr uint64_t MAX_GOLF_ROUNDS_PER_DAY = 3000;
+
+static uint64_t g_day = 0, g_used_today = 0, g_games_today = 0, g_golf_today = 0;
 
 static void roll_day() {
   uint64_t day = IC_API::time() / 86'400'000'000'000ULL;
@@ -43,6 +48,7 @@ static void roll_day() {
     g_day = day;
     g_used_today = 0;
     g_games_today = 0;
+    g_golf_today = 0;
   }
 }
 
@@ -134,6 +140,12 @@ void new_game() {
 //   GET  /api/game/<id>         a game with a receipt for every engine move
 //   POST /api/game              body "<depth>\n<w|b>"  -> new game
 //   POST /api/game/<id>/move    body "<key>\n<uci>"    -> the engine replies
+//   GET  /golf  and  /golf/<id> the Chain Golf page
+//   GET  /api/golf/today        today's hole and leaderboard
+//   POST /api/golf/round        body "<nickname>"   -> new round
+//   POST /api/golf/round/<id>/shot  body "<key>\n<angle>\n<power>"
+//   GET  /api/golf/round/<id>   a round, with its hole
+//   GET  /api/golf/round/<id>/shot/<n>  simulate shot n again, and check it
 //   POST /api/fuel                                     -> turn ICP sent to the
 //                                                         canister into cycles
 
@@ -392,6 +404,94 @@ void http_request() {
   ic_api.to_wire(response);
 }
 
+//----------------------------------------------------------------------------------
+// Chain Golf: the canister simulates every shot with Box2D, so the browser
+// only ever shows what the chain computed.
+
+static uint32_t golf_today() {
+  return static_cast<uint32_t>(IC_API::time() / 86'400'000'000'000ULL);
+}
+
+static IC_HttpResponse api_golf_today() {
+  roll_day();
+  uint32_t day = golf_today();
+  return json("{\"course\":" + golf_course_json(golf_course(day)) +
+              ",\"leaderboard\":" + golf_leaderboard_json(day) + "}");
+}
+
+static IC_HttpResponse api_golf_new(IC_API &ic_api, const std::string &body) {
+  if (!budget_left() || g_golf_today >= MAX_GOLF_ROUNDS_PER_DAY)
+    return error(429, "today's on-chain budget is used up, back at 00:00 UTC");
+  if (out_of_fuel(ic_api)) return error(503, OUT_OF_FUEL);
+  ++g_golf_today;
+  uint32_t day = golf_today();
+  GolfRound r = golf_round_new(day, body, IC_API::time());
+  golf_round_save(r);
+  return json(golf_round_json(r, golf_course(day), true));
+}
+
+static IC_HttpResponse api_golf_shot(IC_API &ic_api, uint64_t id,
+                                     const std::string &body) {
+  GolfRound r;
+  if (!golf_round_load(id, r)) return error(404, "no such round");
+  std::istringstream in(body);
+  std::string key, angle_s, power_s;
+  std::getline(in, key);
+  std::getline(in, angle_s);
+  std::getline(in, power_s);
+  if (key != r.key) return error(403, "not your round");
+  if (r.day != golf_today()) return error(409, "that hole has closed, play today's");
+  if (r.finished()) return error(409, "the round is over");
+  float angle = std::strtof(angle_s.c_str(), nullptr);
+  float power = std::strtof(power_s.c_str(), nullptr);
+  if (!std::isfinite(angle) || !std::isfinite(power) || angle < 0 ||
+      angle > GOLF_MAX_ANGLE || power <= 0 || power > GOLF_MAX_POWER)
+    return error(400, "send <key>\\n<angle 0-180>\\n<power 1-100>");
+  if (!budget_left())
+    return error(429, "today's on-chain budget is used up, back at 00:00 UTC");
+  if (out_of_fuel(ic_api)) return error(503, OUT_OF_FUEL);
+
+  GolfCourse course = golf_course(r.day);
+  uint64_t start = instructions();
+  ShotResult res = golf_shoot(course, r.ball(course), angle, power);
+  GolfShot shot{angle, power, res.end, res.how, instructions() - start};
+  g_used_today += shot.instructions;
+  r.shots.push_back(shot);
+  golf_round_save(r);
+  return json("{\"round\":" + golf_round_json(r, course, false) +
+              ",\"frames\":" + golf_frames_json(res.frames) + "}");
+}
+
+static IC_HttpResponse api_golf_round(uint64_t id) {
+  GolfRound r;
+  if (!golf_round_load(id, r)) return error(404, "no such round");
+  return json("{\"round\":" + golf_round_json(r, golf_course(r.day), false) +
+              ",\"course\":" + golf_course_json(golf_course(r.day)) + "}");
+}
+
+// Simulates shot n of a round again, from where it started, and says whether
+// it ends exactly where the round says it did.
+static IC_HttpResponse api_golf_replay(IC_API &ic_api, uint64_t id, size_t n) {
+  GolfRound r;
+  if (!golf_round_load(id, r)) return error(404, "no such round");
+  if (n >= r.shots.size()) return error(404, "no such shot");
+  if (!budget_left())
+    return error(429, "today's on-chain budget is used up, back at 00:00 UTC");
+  if (out_of_fuel(ic_api)) return error(503, OUT_OF_FUEL);
+  GolfCourse course = golf_course(r.day);
+  GolfRound before = r;
+  before.shots.resize(n);
+  const GolfShot &s = r.shots[n];
+  uint64_t start = instructions();
+  ShotResult res = golf_shoot(course, before.ball(course), s.angle, s.power);
+  uint64_t used = instructions() - start;
+  g_used_today += used;
+  bool matches = res.how == s.how && res.end.x == s.end.x && res.end.y == s.end.y;
+  return json("{\"frames\":" + golf_frames_json(res.frames) +
+              ",\"matches\":" + (matches ? "true" : "false") +
+              ",\"instructions\":" + std::to_string(used) + "}");
+}
+
 // A coroutine, because POST /api/fuel calls the ICP ledger and the CMC before
 // it replies; every other route replies straight away.
 static IC_Async http_request_update_async() {
@@ -415,6 +515,20 @@ static IC_Async http_request_update_async() {
   if (method == "GET" &&
       (path == "/" || (parse_id(path, "/game/", id, rest) && rest.empty()))) {
     response = respond(200, "text/html; charset=utf-8", UI_HTML);
+  } else if (method == "GET" &&
+             (path == "/golf" || (parse_id(path, "/golf/", id, rest) && rest.empty()))) {
+    response = respond(200, "text/html; charset=utf-8", GOLF_HTML);
+  } else if (method == "GET" && path == "/api/golf/today") {
+    response = api_golf_today();
+  } else if (method == "POST" && path == "/api/golf/round") {
+    response = api_golf_new(ic_api, body);
+  } else if (parse_id(path, "/api/golf/round/", id, rest)) {
+    uint64_t n{0};
+    std::string tail;
+    if (method == "POST" && rest == "/shot") response = api_golf_shot(ic_api, id, body);
+    else if (method == "GET" && rest.empty()) response = api_golf_round(id);
+    else if (method == "GET" && parse_id(rest, "/shot/", n, tail) && tail.empty())
+      response = api_golf_replay(ic_api, id, static_cast<size_t>(n));
   } else if (method == "GET" && path == "/games") {
     response = respond(200, "text/html; charset=utf-8", GAMES_HTML);
   } else if (method == "GET" && path == "/api/games") {
