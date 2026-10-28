@@ -1,0 +1,479 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Chain Mini-Golf</title>
+<meta name="description" content="A 3D mini-golf hole a day. Every putt is simulated by Bullet Physics, the C++ engine from GTA V, inside an Internet Computer canister, so nobody can fake a score.">
+<style>
+  :root {
+    --bg: #0b0d12; --panel: #141821; --line: #232938; --text: #e8ecf3; --muted: #8b93a7;
+    --accent: #5ef2c8; --accent-dim: rgba(94,242,200,.14); --warn: #ffd666;
+  }
+  * { box-sizing: border-box; }
+  [hidden] { display: none !important; }
+  body { margin: 0; background: var(--bg); color: var(--text);
+    font: 15px/1.45 ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif; }
+  a { color: var(--accent); }
+  main { max-width: 1120px; margin: 0 auto; padding: 22px 16px 48px; }
+  header { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; margin-bottom: 6px; }
+  h1 { margin: 0; font-size: 26px; letter-spacing: -.02em; }
+  h1 span { color: var(--accent); }
+  header nav { margin-left: auto; display: flex; gap: 14px; font-size: 14px; flex-wrap: wrap; }
+  .sub { color: var(--muted); font-size: 14px; margin: 0 0 14px; max-width: 780px; }
+  .stage { position: relative; border: 1px solid var(--line); border-radius: 12px; overflow: hidden; background: #0f1a2b; }
+  canvas { display: block; width: 100%; height: clamp(300px, 52vw, 520px); touch-action: none; cursor: crosshair; }
+  .hud { position: absolute; left: 12px; top: 10px; font-size: 13px; color: var(--muted); pointer-events: none; text-shadow: 0 1px 2px #000; }
+  .hud b { color: var(--text); }
+  .views { position: absolute; right: 10px; top: 8px; display: flex; gap: 6px; }
+  .views button { padding: 5px 10px; font-size: 12.5px; background: rgba(16,19,26,.8); }
+  .views button.on { border-color: var(--accent); color: var(--accent); }
+  .thinking { position: absolute; right: 12px; bottom: 12px; background: rgba(16,19,26,.85); border: 1px solid var(--line);
+    border-radius: 8px; padding: 6px 10px; font-size: 13px; color: var(--accent); }
+  .layout { display: grid; grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr); gap: 14px; margin-top: 14px; }
+  @media (max-width: 820px) { .layout { grid-template-columns: minmax(0, 1fr); } }
+  .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 16px; }
+  .panel + .panel { margin-top: 14px; }
+  .label { color: var(--muted); font-size: 12px; text-transform: uppercase; letter-spacing: .08em; margin-bottom: 10px;
+    display: flex; justify-content: space-between; gap: 8px; flex-wrap: wrap; align-items: center; }
+  .status { font-size: 17px; font-weight: 600; min-height: 1.45em; }
+  .status.busy { color: var(--accent); }
+  .row { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 12px; align-items: center; }
+  button, input[type=text] { font: inherit; color: var(--text); background: #1c2230; border: 1px solid var(--line); border-radius: 8px; padding: 8px 12px; }
+  button { cursor: pointer; } button:hover { border-color: var(--accent); }
+  button.primary { background: var(--accent); color: #062a20; border-color: var(--accent); font-weight: 600; }
+  button:disabled { opacity: .5; cursor: default; }
+  input[type=text] { width: 180px; }
+  .aim { display: grid; grid-template-columns: max-content minmax(0, 1fr) 4.5em; gap: 8px 12px; align-items: center; margin-top: 12px; font-size: 14px; }
+  .aim output { font-variant-numeric: tabular-nums; text-align: right; color: var(--muted); }
+  input[type=range] { width: 100%; accent-color: #5ef2c8; }
+  .kv { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 4px 12px; margin-top: 12px;
+    font: 12px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace; border-left: 2px solid rgba(94,242,200,.45); padding-left: 12px; }
+  .kv dt { color: var(--muted); } .kv dd { margin: 0; overflow-wrap: anywhere; }
+  ol.board { margin: 0; padding-left: 22px; font-variant-numeric: tabular-nums; }
+  ol.board li { padding: 3px 0; } ol.board li span { color: var(--muted); }
+  .shots { font: 12.5px/1.7 ui-monospace, SFMono-Regular, Menlo, monospace; color: var(--muted); }
+  .shots .ok { color: var(--accent); }
+  .share { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 12px; }
+  .share a { color: var(--text); background: #1c2230; border: 1px solid var(--line); border-radius: 8px; padding: 8px 12px; text-decoration: none; font-size: 14px; }
+  .banner { background: var(--accent-dim); border: 1px solid rgba(94,242,200,.35); border-radius: 10px; padding: 10px 12px; font-size: 14px; margin-top: 12px; }
+  .note { color: var(--muted); font-size: 12.5px; margin-top: 14px; max-width: 820px; }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <h1>Chain <span>Mini-Golf</span></h1>
+    <nav><a href="/">Home</a><a href="/chess">♟ Chess</a><a href="/golf">⛳ Golf</a><a href="/games">All games</a><a href="/#fuel">⛽ Fuel</a></nav>
+  </header>
+  <p class="sub">A 3D hole a day. Every putt is simulated by <b>Bullet Physics</b>, the C++ engine from GTA V and Red Dead Redemption,
+    running inside an Internet Computer canister on 13 computers. The windmill too. Your browser only draws what the chain computed.</p>
+
+  <div class="stage">
+    <canvas id="c" aria-label="The mini-golf hole in 3D"></canvas>
+    <div class="hud" id="hud"></div>
+    <div class="views"><button id="v-follow" class="on">Follow</button><button id="v-top">Overview</button></div>
+    <div class="thinking" id="thinking" hidden>⛓ 13 computers are simulating your putt…</div>
+  </div>
+
+  <div class="layout">
+    <div>
+      <div class="panel">
+        <div id="status" class="status">Loading today's hole from the canister…</div>
+        <div id="setup" class="row" hidden>
+          <input id="name" type="text" maxlength="16" placeholder="Your name (optional)" aria-label="Your name for the leaderboard">
+          <button id="start" class="primary">Tee off</button>
+        </div>
+        <div id="controls" hidden>
+          <div class="aim">
+            <label for="yaw">Direction</label><input id="yaw" type="range" min="0" max="360" step="0.5" value="0"><output id="yaw-v"></output>
+            <label for="power">Power</label><input id="power" type="range" min="1" max="100" step="0.5" value="40"><output id="power-v"></output>
+          </div>
+          <div class="row"><button id="shoot" class="primary">Putt</button>
+            <span class="note" style="margin:0">or drag back from the ball on the green</span></div>
+        </div>
+        <div id="spectator" class="banner" hidden></div>
+        <div id="share" class="share" hidden>
+          <button id="share-btn" class="primary">Share</button>
+          <button id="copy-btn">Copy link</button>
+          <a id="share-x" target="_blank" rel="noopener">Post on X</a>
+          <a id="share-wa" target="_blank" rel="noopener">WhatsApp</a>
+        </div>
+        <dl class="kv" id="receipt" hidden></dl>
+      </div>
+      <div class="panel">
+        <div class="label"><span>Putts · each one can be recomputed on-chain</span><button id="verify" hidden>Recompute all on-chain</button></div>
+        <div class="shots" id="shots">No putts yet.</div>
+      </div>
+    </div>
+    <div>
+      <div class="panel">
+        <div class="label"><span>Today's leaderboard</span><span id="lb-stats"></span></div>
+        <ol class="board" id="board"></ol>
+      </div>
+      <p class="note">Physics runs at 120 Hz with continuous collision detection, so the ball can't slip through a wall. The
+        windmill's blades start each putt at an angle fixed by the day and the stroke, so a recompute sees exactly the same blades.
+        Putts come out of the shared fuel tank, like the chess and the 2D golf.</p>
+    </div>
+  </div>
+</main>
+<script type="module">
+import * as THREE from "/three.module.min.js";
+
+const $ = (id) => document.getElementById(id);
+const fmt = (n) => n >= 1e9 ? (n / 1e9).toFixed(2) + "B" : n >= 1e6 ? (n / 1e6).toFixed(1) + "M" : n >= 1e3 ? (n / 1e3).toFixed(1) + "k" : String(n);
+const KEY = (id) => "mg_key_" + id, MINE = (day) => "mg_round_" + day;
+const store = (k, v) => { try { localStorage.setItem(k, v); } catch (e) {} };
+const read = (k) => { try { return localStorage.getItem(k); } catch (e) { return null; } };
+
+let course = null, round = null, key = null, busy = false, view = "follow";
+
+async function call(method, path, body) {
+  const res = await fetch(path, { method, body });
+  const data = await res.json().catch(() => ({ error: "HTTP " + res.status }));
+  if (!res.ok) throw new Error(data.error || "HTTP " + res.status);
+  return data;
+}
+
+// ---------- the scene ----------
+const canvas = $("c");
+const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
+renderer.setPixelRatio(Math.min(2, window.devicePixelRatio || 1));
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x0f1a2b);
+scene.fog = new THREE.Fog(0x0f1a2b, 30, 60);
+const camera = new THREE.PerspectiveCamera(42, 2, 0.05, 200);
+scene.add(new THREE.HemisphereLight(0xcfe8ff, 0x1b3a26, 0.9));
+const sun = new THREE.DirectionalLight(0xffffff, 1.6);
+sun.position.set(6, 12, 4);
+sun.castShadow = true;
+sun.shadow.mapSize.set(2048, 2048);
+Object.assign(sun.shadow.camera, { left: -12, right: 12, top: 8, bottom: -8, near: 1, far: 40 });
+scene.add(sun, sun.target);
+
+let ball = null, aimArrow = null, trail = null, mills = [];
+const camTarget = new THREE.Vector3(), camPos = new THREE.Vector3();
+
+function buildCourse() {
+  const { nx, nz, cell, heights, cup } = course;
+  const H = (i, k) => heights[k * (nx + 1) + i];
+  const L = nx * cell, W = nz * cell;
+  sun.target.position.set(L / 2, 0, W / 2);
+  sun.position.set(L / 2 + 5, 12, W / 2 + 6);
+  Object.assign(sun.shadow.camera, { left: -L / 2 - 2, right: L / 2 + 2, top: W, bottom: -W });
+  sun.shadow.camera.updateProjectionMatrix();
+
+  // The green, as the canister meshes it: two triangles a cell, the cup cell open.
+  const pos = [], col = [], idx = [];
+  const light = new THREE.Color(0x3a9a62), dark = new THREE.Color(0x2f8656);
+  for (let k = 0; k <= nz; k++) for (let i = 0; i <= nx; i++) {
+    pos.push(i * cell, H(i, k), k * cell);
+    const c = Math.floor(i / 4) % 2 ? light : dark; // mowing stripes
+    col.push(c.r, c.g, c.b);
+  }
+  const v = (i, k) => k * (nx + 1) + i;
+  for (let k = 0; k < nz; k++) for (let i = 0; i < nx; i++) {
+    if (i === cup.i && k === cup.k) continue;
+    idx.push(v(i, k), v(i + 1, k + 1), v(i + 1, k), v(i, k), v(i, k + 1), v(i + 1, k + 1));
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute("position", new THREE.Float32BufferAttribute(pos, 3));
+  g.setAttribute("color", new THREE.Float32BufferAttribute(col, 3));
+  g.setIndex(idx); g.computeVertexNormals();
+  const green = new THREE.Mesh(g, new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.9 }));
+  green.receiveShadow = true; green.name = "green";
+  scene.add(green);
+
+  // The cup: a dark box below the open cell, a pole and a flag.
+  const cx = (cup.i + 0.5) * cell, cz = (cup.k + 0.5) * cell;
+  const hole = new THREE.Mesh(new THREE.BoxGeometry(cell, cup.depth, cell), new THREE.MeshStandardMaterial({ color: 0x0a0f0c, side: THREE.BackSide }));
+  hole.position.set(cx, cup.rim - cup.depth / 2, cz); scene.add(hole);
+  const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.012, 0.012, 1.3), new THREE.MeshStandardMaterial({ color: 0xeeeeee }));
+  pole.position.set(cx, cup.rim + 0.65, cz); pole.castShadow = true; scene.add(pole);
+  const flag = new THREE.Mesh(new THREE.PlaneGeometry(0.42, 0.26), new THREE.MeshStandardMaterial({ color: 0xff5d5d, side: THREE.DoubleSide }));
+  flag.position.set(cx + 0.21, cup.rim + 1.15, cz); flag.castShadow = true; flag.name = "flag"; scene.add(flag);
+
+  // The walls, where the physics has them.
+  const wood = new THREE.MeshStandardMaterial({ color: 0x8b5e3c, roughness: 0.7 });
+  const top = course.wall_top, h = top + 0.6;
+  for (const [x, z, sx, sz] of [[L / 2, -0.05, L + 0.2, 0.1], [L / 2, W + 0.05, L + 0.2, 0.1], [-0.05, W / 2, 0.1, W], [L + 0.05, W / 2, 0.1, W]]) {
+    const m = new THREE.Mesh(new THREE.BoxGeometry(sx, h, sz), wood);
+    m.position.set(x, top - h / 2, z); m.castShadow = m.receiveShadow = true; scene.add(m);
+  }
+
+  // Obstacles.
+  for (const o of course.obstacles) {
+    if (o.kind === "block") {
+      const hh = 2 * o.half_y + 0.6;
+      const m = new THREE.Mesh(new THREE.BoxGeometry(2 * o.half_x, hh, 2 * o.half_z), new THREE.MeshStandardMaterial({ color: 0xb98a56, roughness: 0.6 }));
+      m.position.set(o.x, o.ground - 0.6 + hh / 2, o.z); m.rotation.y = o.yaw; m.castShadow = m.receiveShadow = true; scene.add(m);
+    } else if (o.kind === "bumper") {
+      const hh = 2 * o.half_y + 0.6;
+      const m = new THREE.Mesh(new THREE.CylinderGeometry(o.half_x, o.half_x, hh, 32), new THREE.MeshStandardMaterial({ color: 0xff6b6b, roughness: 0.4 }));
+      m.position.set(o.x, o.ground - 0.6 + hh / 2, o.z); m.castShadow = true; scene.add(m);
+    } else {
+      const hub = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.4, 0.3), new THREE.MeshStandardMaterial({ color: 0xe8ecf3 }));
+      hub.position.set(o.x, o.ground + 0.1, o.z); hub.castShadow = true; scene.add(hub);
+      const tower = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.08, 1.4), new THREE.MeshStandardMaterial({ color: 0xe8ecf3 }));
+      tower.position.set(o.x, o.ground + 0.9, o.z); tower.castShadow = true; scene.add(tower);
+      const blade = new THREE.Mesh(new THREE.BoxGeometry(2 * o.half_x, 2 * o.half_y, 2 * o.half_z), new THREE.MeshStandardMaterial({ color: 0x5ef2c8, roughness: 0.5 }));
+      blade.position.set(o.x, o.ground + o.half_y + 0.01, o.z); blade.castShadow = true; scene.add(blade);
+      mills.push({ blade, o });
+    }
+  }
+
+  ball = new THREE.Mesh(new THREE.SphereGeometry(course.ball_radius, 32, 16), new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.3 }));
+  ball.castShadow = true; scene.add(ball);
+  aimArrow = new THREE.ArrowHelper(new THREE.Vector3(1, 0, 0), new THREE.Vector3(), 1, 0xffd666, 0.18, 0.12);
+  scene.add(aimArrow);
+  trail = new THREE.Line(new THREE.BufferGeometry(), new THREE.LineDashedMaterial({ color: 0x5ef2c8, dashSize: 0.12, gapSize: 0.1 }));
+  scene.add(trail);
+}
+
+// The windmill's angle, as the canister turns it: Bullet's yaw is about +y.
+function setMills(phase, t) { for (const { blade, o } of mills) blade.rotation.y = phase + o.omega * t; }
+
+function placeBall(p) { ball.position.set(p.x, p.y, p.z); }
+
+function aimCamera(snap) {
+  const L = course.nx * course.cell, W = course.nz * course.cell;
+  if (view === "top") { camTarget.set(L / 2, 0, W / 2); camPos.set(L / 2, 13, W / 2 + 9); }
+  else {
+    const a = +$("yaw").value * Math.PI / 180;
+    camTarget.copy(ball.position);
+    camPos.set(ball.position.x - Math.cos(a) * 3.2, ball.position.y + 1.6, ball.position.z - Math.sin(a) * 3.2);
+  }
+  if (snap) camera.position.copy(camPos);
+}
+
+function resize() {
+  const w = canvas.clientWidth, h = canvas.clientHeight;
+  if (canvas.width !== Math.floor(w * renderer.getPixelRatio())) { renderer.setSize(w, h, false); camera.aspect = w / h; camera.updateProjectionMatrix(); }
+}
+
+let lookAt = new THREE.Vector3();
+function frame() {
+  if (course) {
+    resize();
+    camera.position.lerp(camPos, 0.08);
+    lookAt.lerp(camTarget, 0.12);
+    camera.lookAt(lookAt);
+    const flag = scene.getObjectByName("flag");
+    if (flag) flag.rotation.y = Math.sin(performance.now() / 700) * 0.25;
+    renderer.render(scene, camera);
+  }
+  requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+
+// ---------- aiming ----------
+const canShoot = () => round && key && round.status === "playing" && !busy;
+function syncAim() {
+  $("yaw-v").textContent = (+$("yaw").value).toFixed(1) + "°";
+  $("power-v").textContent = (+$("power").value).toFixed(0) + "%";
+  if (!ball) return;
+  const a = +$("yaw").value * Math.PI / 180;
+  aimArrow.visible = canShoot();
+  aimArrow.position.copy(ball.position);
+  aimArrow.setDirection(new THREE.Vector3(Math.cos(a), 0, Math.sin(a)));
+  aimArrow.setLength(0.3 + +$("power").value / 100 * 2.2, 0.18, 0.12);
+  if (view === "follow" && !busy) aimCamera(false);
+}
+$("yaw").oninput = syncAim; $("power").oninput = syncAim;
+
+// Drag back from the ball, like a slingshot; a tap only cancels.
+const ray = new THREE.Raycaster(), plane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0), hit = new THREE.Vector3();
+let aiming = null;
+function groundPoint(e) {
+  const r = canvas.getBoundingClientRect();
+  ray.setFromCamera(new THREE.Vector2(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1), camera);
+  plane.constant = -ball.position.y;
+  return ray.ray.intersectPlane(plane, hit) ? hit.clone() : null;
+}
+canvas.addEventListener("pointerdown", (e) => {
+  if (!canShoot() || e.button !== 0) return;
+  aiming = { x: e.clientX, y: e.clientY, dragged: false };
+  canvas.setPointerCapture(e.pointerId);
+});
+canvas.addEventListener("pointermove", (e) => {
+  if (!aiming) return;
+  if (Math.hypot(e.clientX - aiming.x, e.clientY - aiming.y) > 12) aiming.dragged = true;
+  if (!aiming.dragged) return;
+  const p = groundPoint(e);
+  if (!p) return;
+  const dx = ball.position.x - p.x, dz = ball.position.z - p.z;
+  let yaw = Math.atan2(dz, dx) * 180 / Math.PI;
+  if (yaw < 0) yaw += 360;
+  $("yaw").value = yaw.toFixed(1);
+  $("power").value = Math.max(1, Math.min(100, Math.hypot(dx, dz) / 2.5 * 100)).toFixed(1);
+  syncAim();
+});
+canvas.addEventListener("pointerup", () => { const a = aiming; aiming = null; if (a && a.dragged) shoot(); });
+canvas.addEventListener("pointercancel", () => { aiming = null; });
+
+for (const [id, v] of [["v-follow", "follow"], ["v-top", "top"]]) $(id).onclick = () => {
+  view = v; $("v-follow").classList.toggle("on", v === "follow"); $("v-top").classList.toggle("on", v === "top"); aimCamera(false);
+};
+
+// ---------- flow ----------
+function setStatus(t, isBusy = false) { $("status").textContent = t; $("status").classList.toggle("busy", isBusy); }
+function hud() {
+  const date = new Date(course.day * 86400e3).toLocaleDateString([], { month: "short", day: "numeric", timeZone: "UTC" });
+  $("hud").innerHTML = `Hole of <b>${date}</b> · par <b>${course.par}</b>` + (round ? ` · strokes <b>${round.strokes}</b>` : "");
+}
+function renderBoard(lb) {
+  $("lb-stats").textContent = `${lb.played} played · ${lb.holed} holed${lb.aces ? ` · ${lb.aces} ace${lb.aces > 1 ? "s" : ""}` : ""}`;
+  $("board").innerHTML = lb.top.length ? lb.top.map((e) =>
+    `<li><a href="/minigolf/${e.id}">${e.name}</a> <span>· ${e.strokes} stroke${e.strokes > 1 ? "s" : ""}${round && e.id === round.id ? " · you" : ""}</span></li>`).join("")
+    : `<li style="list-style:none;margin-left:-22px;color:var(--muted)">Nobody has holed it yet today.</li>`;
+}
+function renderShots(checks = {}) {
+  if (!round || !round.shots.length) { $("shots").textContent = "No putts yet."; $("verify").hidden = true; return; }
+  $("shots").innerHTML = round.shots.map((s, i) =>
+    `${i + 1}. ${s.yaw.toFixed(1)}° at ${s.power.toFixed(0)}% → ${s.how === "holed" ? "in the cup ⛳" : s.how === "out" ? "off the course (+1)" : "rests"}` +
+    ` · ${fmt(s.instructions)} instr` + (checks[i] === true ? ` <span class="ok">✓ recomputed, identical</span>` : checks[i] === false ? " ✗ differs" : checks[i] === "…" ? " …" : "")).join("<br>");
+  $("verify").hidden = false;
+}
+function statusText() {
+  if (!round) return "Press Tee off to start your round.";
+  if (round.status === "holed") return round.strokes === 1 ? "Hole in one! The chain saw it." : `In the cup in ${round.strokes}.`;
+  if (round.status === "gave_up") return "Out of putts for this round.";
+  if (!key) return `${round.name}'s round · ${round.strokes} stroke${round.strokes === 1 ? "" : "s"} so far`;
+  return round.shots.length ? "Line up the next putt." : "Aim, then putt. The canister will simulate it.";
+}
+function after() {
+  placeBall(round.ball);
+  setMills(round.next_phase, 0);
+  trail.geometry.setFromPoints([]);
+  setStatus(statusText());
+  $("controls").hidden = !canShoot();
+  $("setup").hidden = true;
+  $("share").hidden = !round.shots.length;
+  updateShare(); renderShots(); hud(); syncAim(); aimCamera(false);
+  if (round.status !== "playing") call("GET", "/api/minigolf/today").then((t) => renderBoard(t.leaderboard)).catch(() => {});
+}
+
+// Plays the canister's frames back at real speed, windmill included.
+function animate(frames, phase) {
+  return new Promise((done) => {
+    const pts = [], t0 = performance.now(), dt = course.steps_per_frame / 120;
+    const tick = () => {
+      const i = Math.min(frames.length - 1, Math.floor((performance.now() - t0) / 1000 / dt));
+      for (let j = pts.length; j <= i; j++) pts.push(new THREE.Vector3(...frames[j]));
+      const [x, y, z] = frames[i];
+      ball.position.set(x, y, z);
+      setMills(phase, i * dt);
+      trail.geometry.setFromPoints(pts); trail.computeLineDistances();
+      if (view === "follow") { camTarget.copy(ball.position); camPos.set(x - 2.6, y + 1.8, z + 2.2); }
+      if (i >= frames.length - 1) return done();
+      requestAnimationFrame(tick);
+    };
+    tick();
+  });
+}
+
+async function start() {
+  $("start").disabled = true;
+  setStatus("Creating your round on-chain…", true);
+  try {
+    round = await call("POST", "/api/minigolf/round", $("name").value);
+    key = round.key; store(KEY(round.id), key); store(MINE(round.day), String(round.id));
+    history.replaceState(null, "", "/minigolf/" + round.id);
+    after();
+  } catch (e) { setStatus("The canister refused: " + e.message); }
+  $("start").disabled = false;
+}
+
+async function shoot() {
+  if (!canShoot()) return;
+  busy = true; $("shoot").disabled = true; $("thinking").hidden = false; aimArrow.visible = false;
+  setStatus("The canister is simulating your putt…", true);
+  const phase = round.next_phase;
+  try {
+    const r = await call("POST", `/api/minigolf/round/${round.id}/shot`, `${key}\n${$("yaw").value}\n${$("power").value}`);
+    $("thinking").hidden = true;
+    await animate(r.frames, phase);
+    round = r.round;
+    const s = round.shots[round.shots.length - 1];
+    $("receipt").hidden = false;
+    $("receipt").innerHTML = `<dt>putt</dt><dd>${s.yaw.toFixed(1)}° · ${s.power.toFixed(0)}% · ${s.how}</dd>
+      <dt>physics</dt><dd>Bullet 3.25 · ${r.frames.length * course.steps_per_frame} steps at 120 Hz · CCD on</dd>
+      <dt>instructions</dt><dd>${s.instructions.toLocaleString()}</dd>
+      <dt>executed</dt><dd>replicated on 13 nodes, via consensus</dd>
+      <dt>stored</dt><dd>/mg_round_${round.id}.txt · stable memory</dd>`;
+  } catch (e) { $("thinking").hidden = true; setStatus("The canister refused: " + e.message); }
+  busy = false; $("shoot").disabled = false;
+  if (round) after();
+}
+$("shoot").onclick = shoot;
+$("start").onclick = start;
+
+$("verify").onclick = async () => {
+  $("verify").disabled = true;
+  const checks = {};
+  for (let i = 0; i < round.shots.length; i++) {
+    checks[i] = "…"; renderShots(checks);
+    try {
+      const r = await call("GET", `/api/minigolf/round/${round.id}/shot/${i}`);
+      await animate(r.frames, round.shots[i].phase);
+      checks[i] = r.matches;
+    } catch (e) { setStatus("Recompute failed: " + e.message); break; }
+    renderShots(checks);
+  }
+  placeBall(round.ball); setMills(round.next_phase, 0);
+  $("verify").disabled = false;
+};
+
+// ---------- share ----------
+const shareUrl = () => location.origin + "/minigolf/" + round.id;
+function shareText() {
+  if (round.status === "holed") return round.strokes === 1
+    ? "Hole in one on today's Chain Mini-Golf ⛳ Simulated in 3D by Bullet Physics on 13 computers, so it's real. Beat that:"
+    : `I holed today's Chain Mini-Golf in ${round.strokes} ⛳ Every putt was simulated by Bullet Physics on 13 computers. Beat me:`;
+  return "Playing 3D mini-golf where every putt is simulated by Bullet Physics inside an Internet Computer canister ⛳⛓";
+}
+function updateShare() {
+  $("share-x").href = "https://x.com/intent/post?text=" + encodeURIComponent(shareText()) + "&url=" + encodeURIComponent(shareUrl());
+  $("share-wa").href = "https://wa.me/?text=" + encodeURIComponent(shareText() + " " + shareUrl());
+  $("share-btn").hidden = !navigator.share;
+}
+$("share-btn").onclick = async () => { try { await navigator.share({ title: "Chain Mini-Golf", text: shareText(), url: shareUrl() }); } catch (e) {} };
+$("copy-btn").onclick = async () => {
+  try { await navigator.clipboard.writeText(shareUrl()); $("copy-btn").textContent = "Copied ✓"; } catch (e) { $("copy-btn").textContent = shareUrl(); return; }
+  setTimeout(() => { $("copy-btn").textContent = "Copy link"; }, 1600);
+};
+
+// ---------- load ----------
+async function load() {
+  const m = location.pathname.match(/^\/minigolf\/(\d+)$/);
+  try {
+    // Both at once: each is an update call, a second or two on mainnet.
+    const [t, r] = await Promise.all([call("GET", "/api/minigolf/today"), m ? call("GET", "/api/minigolf/round/" + m[1]) : null]);
+    renderBoard(t.leaderboard);
+    course = r ? r.course : t.course;
+    buildCourse();
+    if (!m) {
+      const mine = read(MINE(course.day));
+      if (mine) { location.replace("/minigolf/" + mine); return; }
+      placeBall(course.tee); setMills(0, 0);
+      $("yaw").value = 0; syncAim(); aimCamera(true); hud();
+      $("setup").hidden = false; setStatus("Today's hole is ready. Press Tee off.");
+      return;
+    }
+    round = r.round; key = read(KEY(round.id));
+    if (!key || round.day !== t.course.day) {
+      key = null;
+      $("spectator").hidden = false;
+      $("spectator").innerHTML = `You're watching ${round.name}'s round. Press <b>Recompute all on-chain</b> to have the canister simulate every putt again. <a href="/minigolf">Play today's hole</a>.`;
+    }
+    after(); aimCamera(true);
+  } catch (e) { setStatus("Could not reach the canister: " + e.message); }
+}
+window.addEventListener("resize", resize);
+syncAim();
+load();
+</script>
+</body>
+</html>

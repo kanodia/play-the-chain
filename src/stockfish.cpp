@@ -13,6 +13,7 @@
 #include "fuel.h"
 #include "games.h"
 #include "golf.h"
+#include "minigolf.h"
 #include "ic_api.h"
 #include "ui_html.h"
 
@@ -40,7 +41,8 @@ constexpr size_t MAX_PLIES = 600;
 
 constexpr uint64_t MAX_GOLF_ROUNDS_PER_DAY = 3000;
 
-static uint64_t g_day = 0, g_used_today = 0, g_games_today = 0, g_golf_today = 0;
+static uint64_t g_day = 0, g_used_today = 0, g_games_today = 0, g_golf_today = 0,
+                g_mg_today = 0;
 
 static void roll_day() {
   uint64_t day = IC_API::time() / 86'400'000'000'000ULL;
@@ -49,6 +51,7 @@ static void roll_day() {
     g_used_today = 0;
     g_games_today = 0;
     g_golf_today = 0;
+    g_mg_today = 0;
   }
 }
 
@@ -147,6 +150,9 @@ void new_game() {
 //   POST /api/golf/round/<id>/shot  body "<key>\n<angle>\n<power>"
 //   GET  /api/golf/round/<id>   a round, with its hole
 //   GET  /api/golf/round/<id>/shot/<n>  simulate shot n again, and check it
+//   GET  /minigolf  and  /minigolf/<id>   Chain Mini-Golf, in 3D, with Bullet
+//   GET  /api/minigolf/today, POST /api/minigolf/round, ...  as for golf;
+//        a putt is "<key>\n<yaw 0-360>\n<power 1-100>"
 //   POST /api/fuel                                     -> turn ICP sent to the
 //                                                         canister into cycles
 
@@ -155,12 +161,13 @@ static std::string path_of(const std::string &url) {
 }
 
 static IC_HttpResponse respond(uint16_t status, const std::string &type,
-                               const std::string &body) {
+                               const std::string &body,
+                               const char *cache = "no-store") {
   IC_HttpResponse response;
   response.status_code = status;
   response.headers.push_back({"Content-Type", type});
   response.headers.push_back({"Content-Length", std::to_string(body.size())});
-  response.headers.push_back({"Cache-Control", "no-store"});
+  response.headers.push_back({"Cache-Control", cache});
   response.body.assign(body.begin(), body.end());
   return response;
 }
@@ -493,6 +500,90 @@ static IC_HttpResponse api_golf_replay(IC_API &ic_api, uint64_t id, size_t n) {
               ",\"instructions\":" + std::to_string(used) + "}");
 }
 
+//----------------------------------------------------------------------------------
+// Chain Mini-Golf: the same, in 3D, with Bullet Physics. Windmill blades start
+// each putt at an angle fixed by the day and the stroke number.
+
+static IC_HttpResponse api_mg_today() {
+  roll_day();
+  uint32_t day = golf_today();
+  return json("{\"course\":" + mg_course_json(mg_course(day)) +
+              ",\"leaderboard\":" + mg_leaderboard_json(day) + "}");
+}
+
+static IC_HttpResponse api_mg_new(IC_API &ic_api, const std::string &body) {
+  if (!budget_left() || g_mg_today >= MAX_GOLF_ROUNDS_PER_DAY)
+    return error(429, "today's on-chain budget is used up, back at 00:00 UTC");
+  if (out_of_fuel(ic_api)) return error(503, OUT_OF_FUEL);
+  ++g_mg_today;
+  uint32_t day = golf_today();
+  MgRound r = mg_round_new(day, body, IC_API::time());
+  mg_round_save(r);
+  return json(mg_round_json(r, mg_course(day), true));
+}
+
+static IC_HttpResponse api_mg_shot(IC_API &ic_api, uint64_t id, const std::string &body) {
+  MgRound r;
+  if (!mg_round_load(id, r)) return error(404, "no such round");
+  std::istringstream in(body);
+  std::string key, yaw_s, power_s;
+  std::getline(in, key);
+  std::getline(in, yaw_s);
+  std::getline(in, power_s);
+  if (key != r.key) return error(403, "not your round");
+  if (r.day != golf_today()) return error(409, "that hole has closed, play today's");
+  if (r.finished()) return error(409, "the round is over");
+  float yaw = std::strtof(yaw_s.c_str(), nullptr);
+  float power = std::strtof(power_s.c_str(), nullptr);
+  if (!std::isfinite(yaw) || !std::isfinite(power) || yaw < 0 || yaw > 360 ||
+      power <= 0 || power > MG_MAX_POWER)
+    return error(400, "send <key>\\n<yaw 0-360>\\n<power 1-100>");
+  if (!budget_left())
+    return error(429, "today's on-chain budget is used up, back at 00:00 UTC");
+  if (out_of_fuel(ic_api)) return error(503, OUT_OF_FUEL);
+
+  MgCourse course = mg_course(r.day);
+  float phase = mg_phase(r.day, r.shots.size());
+  uint64_t start = instructions();
+  MgShot res = mg_shoot(course, r.ball(course), yaw, power, phase);
+  MgStroke stroke{yaw, power, res.end, res.how, instructions() - start};
+  g_used_today += stroke.instructions;
+  r.shots.push_back(stroke);
+  mg_round_save(r);
+  return json("{\"round\":" + mg_round_json(r, course, false) +
+              ",\"frames\":" + mg_frames_json(res.frames) + "}");
+}
+
+static IC_HttpResponse api_mg_round(uint64_t id) {
+  MgRound r;
+  if (!mg_round_load(id, r)) return error(404, "no such round");
+  MgCourse course = mg_course(r.day);
+  return json("{\"round\":" + mg_round_json(r, course, false) +
+              ",\"course\":" + mg_course_json(course) + "}");
+}
+
+static IC_HttpResponse api_mg_replay(IC_API &ic_api, uint64_t id, size_t n) {
+  MgRound r;
+  if (!mg_round_load(id, r)) return error(404, "no such round");
+  if (n >= r.shots.size()) return error(404, "no such shot");
+  if (!budget_left())
+    return error(429, "today's on-chain budget is used up, back at 00:00 UTC");
+  if (out_of_fuel(ic_api)) return error(503, OUT_OF_FUEL);
+  MgCourse course = mg_course(r.day);
+  MgRound before = r;
+  before.shots.resize(n);
+  const MgStroke &s = r.shots[n];
+  uint64_t start = instructions();
+  MgShot res = mg_shoot(course, before.ball(course), s.yaw, s.power, mg_phase(r.day, n));
+  uint64_t used = instructions() - start;
+  g_used_today += used;
+  bool matches = res.how == s.how && res.end.x == s.end.x && res.end.y == s.end.y &&
+                 res.end.z == s.end.z;
+  return json("{\"frames\":" + mg_frames_json(res.frames) +
+              ",\"matches\":" + (matches ? "true" : "false") +
+              ",\"instructions\":" + std::to_string(used) + "}");
+}
+
 // A coroutine, because POST /api/fuel calls the ICP ledger and the CMC before
 // it replies; every other route replies straight away.
 static IC_Async http_request_update_async() {
@@ -521,6 +612,24 @@ static IC_Async http_request_update_async() {
   } else if (method == "GET" &&
              (path == "/golf" || (parse_id(path, "/golf/", id, rest) && rest.empty()))) {
     response = respond(200, "text/html; charset=utf-8", GOLF_HTML);
+  } else if (method == "GET" &&
+             (path == "/minigolf" || (parse_id(path, "/minigolf/", id, rest) && rest.empty()))) {
+    response = respond(200, "text/html; charset=utf-8", MINIGOLF_HTML);
+  } else if (method == "GET" && path == "/three.module.min.js") {
+    // A fixed release of three.js: browsers keep it for a year.
+    response = respond(200, "text/javascript; charset=utf-8", THREE_JS,
+                       "public, max-age=31536000, immutable");
+  } else if (method == "GET" && path == "/api/minigolf/today") {
+    response = api_mg_today();
+  } else if (method == "POST" && path == "/api/minigolf/round") {
+    response = api_mg_new(ic_api, body);
+  } else if (parse_id(path, "/api/minigolf/round/", id, rest)) {
+    uint64_t n{0};
+    std::string tail;
+    if (method == "POST" && rest == "/shot") response = api_mg_shot(ic_api, id, body);
+    else if (method == "GET" && rest.empty()) response = api_mg_round(id);
+    else if (method == "GET" && parse_id(rest, "/shot/", n, tail) && tail.empty())
+      response = api_mg_replay(ic_api, id, static_cast<size_t>(n));
   } else if (method == "GET" && path == "/api/golf/today") {
     response = api_golf_today();
   } else if (method == "POST" && path == "/api/golf/round") {
