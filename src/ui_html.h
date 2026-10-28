@@ -41,7 +41,8 @@ static const char HOME_HTML[] = R"HTML(<!doctype html>
   .stat.live .k::before { content: ""; display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: var(--accent); margin-right: 6px; vertical-align: 1px; }
 
   h2.sec { font-size: 13px; color: var(--muted); text-transform: uppercase; letter-spacing: .08em; margin: 40px 0 12px; font-weight: 600; }
-  .games { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
+  .games { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; }
+  @media (max-width: 1000px) { .games { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
   @media (max-width: 760px) { .games { grid-template-columns: minmax(0, 1fr); } }
   .card { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; overflow: hidden; display: flex; flex-direction: column; text-decoration: none; color: var(--text); }
   .card:hover { border-color: rgba(94,242,200,.5); }
@@ -92,7 +93,7 @@ static const char HOME_HTML[] = R"HTML(<!doctype html>
 <main>
   <nav class="top">
     <a class="brand" href="/">Play the <span>Chain</span></a>
-    <a href="/chess">♟ Chess</a><a href="/golf">⛳ Golf</a><a href="/games">Dashboard</a><a href="#fuel">⛽ Fuel</a>
+    <a href="/chess">♟ Chess</a><a href="/golf">⛳ Golf</a><a href="/minigolf">🏌 Mini-Golf 3D</a><a href="/games">Dashboard</a><a href="#fuel">⛽ Fuel</a>
   </nav>
 
   <section class="hero">
@@ -141,11 +142,30 @@ static const char HOME_HTML[] = R"HTML(<!doctype html>
         <div class="go">Play today's hole →</div>
       </div>
     </a>
+    <a class="card" href="/minigolf">
+      <div class="art">
+        <svg viewBox="0 0 320 120" width="300" height="112" aria-hidden="true">
+          <path d="M40 88 L120 40 L300 40 L220 88 Z" fill="#2f8656" stroke="#8b5e3c" stroke-width="5" stroke-linejoin="round"/>
+          <path d="M80 64 L160 64" stroke="#3a9a62" stroke-width="10" opacity=".6"/>
+          <rect x="150" y="50" width="44" height="6" rx="2" fill="#5ef2c8" transform="rotate(-25 172 53)"/>
+          <rect x="168" y="40" width="7" height="26" fill="#e8ecf3"/>
+          <circle cx="246" cy="52" r="5" fill="#0a0f0c"/><line x1="246" y1="52" x2="246" y2="22" stroke="#e8ecf3" stroke-width="2"/><path d="M246 22 L262 27 L246 32 Z" fill="#ff6b6b"/>
+          <circle cx="90" cy="74" r="5" fill="#fff" stroke="#0b0d12"/>
+        </svg>
+      </div>
+      <div class="body">
+        <div class="lib">Bullet 3.25 · the 3D physics engine from GTA V</div>
+        <h3>Chain Mini-Golf <span style="font-size:13px;color:var(--accent);vertical-align:3px">NEW · 3D</span></h3>
+        <p>A 3D hole a day, windmill included. Every putt is simulated by Bullet in the canister and drawn with WebGL;
+          the browser never decides where the ball goes.</p>
+        <div class="go">Putt →</div>
+      </div>
+    </a>
   </div>
 
   <h2 class="sec">How it works</h2>
   <div class="how">
-    <div><span class="n">01</span><b>C++, unchanged</b><span>Stockfish and Box2D are compiled to WebAssembly with icpp-pro. Their engine code isn't rewritten.</span></div>
+    <div><span class="n">01</span><b>C++, unchanged</b><span>Stockfish, Box2D and Bullet are compiled to WebAssembly with icpp-pro. Their engine code isn't rewritten.</span></div>
     <div><span class="n">02</span><b>13 computers agree</b><span>Each move or shot runs on all 13 nodes of an Internet Computer subnet, and the result is agreed by consensus.</span></div>
     <div><span class="n">03</span><b>The game pays</b><span>Compute is paid in cycles from the canister's own balance (reverse gas), so players need no wallet and pay nothing.</span></div>
   </div>
@@ -1211,7 +1231,7 @@ static const char GOLF_HTML[] = R"HTML(<!doctype html>
 <main>
   <header>
     <h1>Chain <span>Golf</span></h1>
-    <nav><a href="/">Home</a><a href="/chess">♟ Chess</a><a href="/games">All games</a><a href="/#fuel">⛽ Fuel</a></nav>
+    <nav><a href="/">Home</a><a href="/chess">♟ Chess</a><a href="/minigolf">🏌 3D</a><a href="/games">All games</a><a href="/#fuel">⛽ Fuel</a></nav>
   </header>
   <p class="sub">One hole a day. Every shot is simulated by <b>Box2D</b>, the C++ physics engine behind Angry Birds, running inside
     an Internet Computer canister on 13 computers. Your browser only draws what the chain computed, so nobody can fake a score.</p>
