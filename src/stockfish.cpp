@@ -133,7 +133,8 @@ void new_game() {
 // HTTP: the board page, and a small JSON API in which the canister is the
 // referee - it checks every human move, plays its own and records both.
 //
-//   GET  /  and  /game/<id>     the page
+//   GET  /                      the home page
+//   GET  /chess  and  /game/<id>  the chess page
 //   GET  /api/info              canister, subnet, games played
 //   GET  /games                 the dashboard of every game
 //   GET  /api/games             one summary line per game, and the cycles balance
@@ -512,8 +513,10 @@ static IC_Async http_request_update_async() {
   }
 
   IC_HttpResponse response = error(404, "not found");
-  if (method == "GET" &&
-      (path == "/" || (parse_id(path, "/game/", id, rest) && rest.empty()))) {
+  if (method == "GET" && path == "/") {
+    response = respond(200, "text/html; charset=utf-8", HOME_HTML);
+  } else if (method == "GET" &&
+             (path == "/chess" || (parse_id(path, "/game/", id, rest) && rest.empty()))) {
     response = respond(200, "text/html; charset=utf-8", UI_HTML);
   } else if (method == "GET" &&
              (path == "/golf" || (parse_id(path, "/golf/", id, rest) && rest.empty()))) {

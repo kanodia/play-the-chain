@@ -141,7 +141,7 @@
 <body>
 <main>
   <header>
-    <h1>Play the <span>Chain</span></h1>
+    <h1><a href="/" style="color:inherit;text-decoration:none">Play the <span>Chain</span></a></h1>
     <div class="tag">Stockfish, compiled from C++ with icpp-pro, running inside an Internet Computer canister.</div>
     <a class="all" href="/golf">⛳ New: Chain Golf</a>
     <a href="/games" style="font-size:14px">All games &amp; cycles →</a>
@@ -600,7 +600,7 @@ async function load() {
     if (!key) {
       $("spectator").hidden = false;
       $("spectator").innerHTML = `You're watching game #${game.id}. Every move was checked and recorded by the canister.
-        <a href="/">Start your own game</a>.`;
+        <a href="/chess">Start your own game</a>.`;
     }
     afterUpdate();
   } catch (e) { setStatus("Could not load game " + m[1] + ": " + e.message); render(); }
