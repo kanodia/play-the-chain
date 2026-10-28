@@ -283,11 +283,31 @@ static std::string fuel_json(IC_API &ic_api) {
          ",\"log\":[" + entries + "]}";
 }
 
+// Test builds run on local networks whose runtime lacks the newer subnet
+// calls; mainnet builds ask the IC.
+static std::string subnet_text(IC_API &ic_api) {
+#ifdef PTC_PLAYGROUND
+  (void)ic_api;
+  return "local";
+#else
+  return ic_api.get_subnet_self().get_text();
+#endif
+}
+
+static uint32_t subnet_nodes(IC_API &ic_api) {
+#ifdef PTC_PLAYGROUND
+  (void)ic_api;
+  return 13;
+#else
+  return ic_api.get_subnet_node_count();
+#endif
+}
+
 static IC_HttpResponse api_info(IC_API &ic_api) {
   roll_day();
   return json("{\"canister\":\"" + ic_api.get_canister_self().get_text() +
-              "\",\"subnet\":\"" + ic_api.get_subnet_self().get_text() +
-              "\",\"nodes\":" + std::to_string(ic_api.get_subnet_node_count()) +
+              "\",\"subnet\":\"" + subnet_text(ic_api) +
+              "\",\"nodes\":" + std::to_string(subnet_nodes(ic_api)) +
               ",\"games\":" + std::to_string(games_count()) +
               ",\"engine\":\"Stockfish 11\",\"max_nodes\":" +
               std::to_string(MAX_NODES) +
@@ -304,7 +324,7 @@ static IC_HttpResponse api_games(IC_API &ic_api) {
   roll_day();
   uint64_t n = games_count();
   std::string out = "{" + fuel_json(ic_api) +
-                    ",\"nodes\":" + std::to_string(ic_api.get_subnet_node_count()) +
+                    ",\"nodes\":" + std::to_string(subnet_nodes(ic_api)) +
                     ",\"used_today\":" + std::to_string(g_used_today) +
                     ",\"budget\":" + std::to_string(DAILY_BUDGET) +
                     ",\"now_ns\":" + std::to_string(IC_API::time()) +
@@ -616,9 +636,17 @@ static IC_Async http_request_update_async() {
              (path == "/minigolf" || (parse_id(path, "/minigolf/", id, rest) && rest.empty()))) {
     response = respond(200, "text/html; charset=utf-8", MINIGOLF_HTML);
   } else if (method == "GET" && path == "/three.module.min.js") {
+#ifdef PTC_PLAYGROUND
+    // Playground builds must stay under 2 MB, so they send the browser to the
+    // same three.js release on unpkg.
+    response.status_code = 302;
+    response.headers = {{"Location", "https://unpkg.com/three@0.160.0/build/three.module.min.js"}};
+    response.body.clear();
+#else
     // A fixed release of three.js: browsers keep it for a year.
     response = respond(200, "text/javascript; charset=utf-8", THREE_JS,
                        "public, max-age=31536000, immutable");
+#endif
   } else if (method == "GET" && path == "/api/minigolf/today") {
     response = api_mg_today();
   } else if (method == "POST" && path == "/api/minigolf/round") {

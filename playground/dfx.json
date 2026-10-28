@@ -1,0 +1,11 @@
+{
+  "dfx": "0.33.0-beta.0",
+  "canisters": {
+    "stockfish": {
+      "type": "custom",
+      "wasm": "build/stockfish.wasm",
+      "candid": "../src/stockfish.did"
+    }
+  },
+  "version": 1
+}

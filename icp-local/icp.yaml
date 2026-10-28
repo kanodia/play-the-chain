@@ -1,0 +1,7 @@
+# Local test network for Play the Chain, with icp-cli: the same wasm as mainnet.
+canisters:
+  - name: stockfish
+    build:
+      steps:
+        - type: pre-built
+          path: ../build/stockfish.wasm

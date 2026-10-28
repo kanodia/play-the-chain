@@ -18,6 +18,6 @@ for name, file in PAGES.items():
 # long cache, so the 3D page needs nothing from anywhere else.
 js = (ROOT / "src/ui/vendor/three.module.min.js").read_text(encoding="utf-8")
 assert ')JS"' not in js
-out += f'\nstatic const char THREE_JS[] = R"JS({js})JS";\n'
+out += f'\n#ifndef PTC_PLAYGROUND\nstatic const char THREE_JS[] = R"JS({js})JS";\n#endif\n'
 print(f"three.module.min.js: {len(js.encode())} bytes")
 (ROOT / "src/ui_html.h").write_text(out, encoding="utf-8")
