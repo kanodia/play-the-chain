@@ -365,7 +365,8 @@ async function load() {
   syncAim();
   const m = location.pathname.match(/^\/golf\/(\d+)$/);
   try {
-    const t = await call("GET", "/api/golf/today");
+    // Both at once: each is an update call, a second or two on mainnet.
+    const [t, r] = await Promise.all([call("GET", "/api/golf/today"), m ? call("GET", "/api/golf/round/" + m[1]) : null]);
     renderBoard(t.leaderboard);
     if (!m) {
       course = t.course; ball = { ...course.tee }; cam.x = ball.x; hud(); draw();
@@ -374,7 +375,6 @@ async function load() {
       $("setup").hidden = false; setStatus("Today's hole is ready. Press Tee off.");
       return;
     }
-    const r = await call("GET", "/api/golf/round/" + m[1]);
     course = r.course; round = r.round; key = read(KEY(round.id));
     if (!key || round.day !== t.course.day) {
       key = null;

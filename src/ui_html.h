@@ -591,10 +591,13 @@ async function load() {
   steps(-1);
   render(); // the start position, while the canister answers
   if (m) { $("setup").hidden = true; setStatus(`Loading game #${m[1]} from the canister…`, true); }
+  // Both at once: each is an update call, a second or two on mainnet.
+  const gameCall = m ? call("GET", "/api/game/" + m[1]) : null;
+  if (gameCall) gameCall.catch(() => {}); // handled below
   try { info = await call("GET", "/api/info"); $("chain-where").textContent = short(info.canister); steps(-1); renderBudget(); } catch (e) {}
   if (!m) return;
   try {
-    game = await call("GET", "/api/game/" + m[1]);
+    game = await gameCall;
     key = stored(game.id);
     $("setup").hidden = true;
     if (!key) {
@@ -1248,7 +1251,8 @@ async function load() {
   syncAim();
   const m = location.pathname.match(/^\/golf\/(\d+)$/);
   try {
-    const t = await call("GET", "/api/golf/today");
+    // Both at once: each is an update call, a second or two on mainnet.
+    const [t, r] = await Promise.all([call("GET", "/api/golf/today"), m ? call("GET", "/api/golf/round/" + m[1]) : null]);
     renderBoard(t.leaderboard);
     if (!m) {
       course = t.course; ball = { ...course.tee }; cam.x = ball.x; hud(); draw();
@@ -1257,7 +1261,6 @@ async function load() {
       $("setup").hidden = false; setStatus("Today's hole is ready. Press Tee off.");
       return;
     }
-    const r = await call("GET", "/api/golf/round/" + m[1]);
     course = r.course; round = r.round; key = read(KEY(round.id));
     if (!key || round.day !== t.course.day) {
       key = null;

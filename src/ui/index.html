@@ -588,10 +588,13 @@ async function load() {
   steps(-1);
   render(); // the start position, while the canister answers
   if (m) { $("setup").hidden = true; setStatus(`Loading game #${m[1]} from the canister…`, true); }
+  // Both at once: each is an update call, a second or two on mainnet.
+  const gameCall = m ? call("GET", "/api/game/" + m[1]) : null;
+  if (gameCall) gameCall.catch(() => {}); // handled below
   try { info = await call("GET", "/api/info"); $("chain-where").textContent = short(info.canister); steps(-1); renderBudget(); } catch (e) {}
   if (!m) return;
   try {
-    game = await call("GET", "/api/game/" + m[1]);
+    game = await gameCall;
     key = stored(game.id);
     $("setup").hidden = true;
     if (!key) {
