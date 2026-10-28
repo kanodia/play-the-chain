@@ -1777,13 +1777,17 @@ function setMills(phase, t) { for (const { blade, o } of mills) blade.rotation.y
 
 function placeBall(p) { ball.position.set(p.x, p.y, p.z); }
 
+const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
 function aimCamera(snap) {
   const L = course.nx * course.cell, W = course.nz * course.cell;
   if (view === "top") { camTarget.set(L / 2, 0, W / 2); camPos.set(L / 2, 13, W / 2 + 9); }
   else {
+    // Behind the ball along the aim, high enough to see over the walls, and
+    // kept inside them so a wall never fills the view.
     const a = +$("yaw").value * Math.PI / 180;
     camTarget.copy(ball.position);
-    camPos.set(ball.position.x - Math.cos(a) * 3.2, ball.position.y + 1.6, ball.position.z - Math.sin(a) * 3.2);
+    camPos.set(clamp(ball.position.x - Math.cos(a) * 2.8, 0.15, L - 0.15), ball.position.y + 2.1,
+               clamp(ball.position.z - Math.sin(a) * 2.8, 0.15, W - 0.15));
   }
   if (snap) camera.position.copy(camPos);
 }
@@ -1809,7 +1813,7 @@ function frame() {
 requestAnimationFrame(frame);
 
 // ---------- aiming ----------
-const canShoot = () => round && key && round.status === "playing" && !busy;
+const canShoot = () => !!(round && key && round.status === "playing" && !busy);
 function syncAim() {
   $("yaw-v").textContent = (+$("yaw").value).toFixed(1) + "°";
   $("power-v").textContent = (+$("power").value).toFixed(0) + "%";
@@ -1906,7 +1910,10 @@ function animate(frames, phase) {
       ball.position.set(x, y, z);
       setMills(phase, i * dt);
       trail.geometry.setFromPoints(pts); trail.computeLineDistances();
-      if (view === "follow") { camTarget.copy(ball.position); camPos.set(x - 2.6, y + 1.8, z + 2.2); }
+      if (view === "follow") {
+        const L = course.nx * course.cell, W = course.nz * course.cell;
+        camTarget.copy(ball.position); camPos.set(clamp(x - 2.4, 0.15, L - 0.15), y + 2.2, clamp(z + 1.8, 0.15, W - 0.15));
+      }
       if (i >= frames.length - 1) return done();
       requestAnimationFrame(tick);
     };
