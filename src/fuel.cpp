@@ -2,6 +2,7 @@
 
 #include "candid_reply.h"
 
+#include <algorithm>
 #include <fstream>
 #include <sstream>
 #include <utility>
@@ -14,6 +15,15 @@ static const char *LEDGER = "ryjl3-tyaaa-aaaaa-aaaba-cai";
 static const char *CMC = "rkp4c-7iaaa-aaaaa-aaaca-cai";
 static const char *LOG_PATH = "/fuel_log.txt";
 static const char *PENDING_PATH = "/fuel_pending.txt"; // "<block> <e8s>"
+// The developer's share of the refuel in progress, already paid: "<block> <e8s>".
+// While it is set, a retried refuel does not take a second share.
+static const char *SHARE_PATH = "/fuel_share.txt";
+
+// 10% of every refuel goes to the developer's ICP account; the rest becomes
+// cycles. Public on purpose: anyone can check where the share goes, and only
+// an upgrade by the canister's controllers can change it.
+const char *DEV_ACCOUNT = "";
+constexpr uint64_t DEV_SHARE_PERCENT = 10;
 
 constexpr uint64_t LEDGER_FEE = 10'000;
 constexpr uint64_t MIN_E8S = 100'000; // 0.001 ICP; less is left for later
@@ -57,6 +67,7 @@ std::vector<FuelEntry> fuel_log() {
     std::string cycles;
     if (!(in >> e.time_ns >> e.e8s >> e.block >> cycles)) continue;
     for (char c : cycles) e.cycles = e.cycles * 10 + (c - '0');
+    in >> e.dev_e8s >> e.dev_block; // absent in refuels from before the share
     out.push_back(e);
   }
   return out;
@@ -64,8 +75,41 @@ std::vector<FuelEntry> fuel_log() {
 
 static void log_append(const FuelEntry &e) {
   std::ofstream file(LOG_PATH, std::ios::app);
-  file << e.time_ns << ' ' << e.e8s << ' ' << e.block << ' ' << u128(e.cycles)
-       << '\n';
+  file << e.time_ns << ' ' << e.e8s << ' ' << e.block << ' ' << u128(e.cycles) << ' '
+       << e.dev_e8s << ' ' << e.dev_block << '\n';
+}
+
+static void share_save(uint64_t block, uint64_t e8s) {
+  std::ofstream file(SHARE_PATH, std::ios::trunc);
+  if (block) file << block << ' ' << e8s;
+}
+
+static bool share_load(uint64_t &block, uint64_t &e8s) {
+  std::ifstream file(SHARE_PATH);
+  return file && (file >> block >> e8s);
+}
+
+static int hex_digit(char c) {
+  return c >= '0' && c <= '9' ? c - '0' : c >= 'a' && c <= 'f' ? c - 'a' + 10 : c >= 'A' && c <= 'F' ? c - 'A' + 10 : -1;
+}
+
+// TRANSFER_PREFIX with another destination account and memo 0: the same
+// transfer, to the developer.
+static bool dev_transfer_args(std::vector<uint8_t> &args) {
+  if (std::char_traits<char>::length(DEV_ACCOUNT) != 64) return false;
+  args.assign(std::begin(TRANSFER_PREFIX), std::end(TRANSFER_PREFIX));
+  // The values start after "1 argument of type 5"; `to` is a 32-byte blob.
+  static const uint8_t AT[] = {0x01, 0x05, 0x20};
+  auto it = std::search(args.begin(), args.end(), std::begin(AT), std::end(AT));
+  if (it == args.end()) return false;
+  size_t to = (it - args.begin()) + 3, memo = to + 32 + 8; // then the fee, then the memo
+  for (size_t k = 0; k < 32; ++k) {
+    int hi = hex_digit(DEV_ACCOUNT[2 * k]), lo = hex_digit(DEV_ACCOUNT[2 * k + 1]);
+    if (hi < 0 || lo < 0) return false;
+    args[to + k] = uint8_t(hi * 16 + lo);
+  }
+  for (size_t k = 0; k < 8; ++k) args[memo + k] = 0;
+  return true;
 }
 
 static bool pending_load(uint64_t &block, uint64_t &e8s) {
@@ -136,6 +180,30 @@ IC_Task<std::string> refuel(CandidTypePrincipal self) {
       co_return reply(false, "no ICP waiting on the canister's account yet");
     }
 
+    // The developer's share first, unless this refuel already paid it. If the
+    // ledger refuses it, everything goes to the cycles this time.
+    uint64_t share_block{0}, share{0};
+    std::vector<uint8_t> dev;
+    if (!share_load(share_block, share) && dev_transfer_args(dev)) {
+      uint64_t cut = balance * DEV_SHARE_PERCENT / 100;
+      if (cut > 2 * LEDGER_FEE) {
+        for (int k = 0; k < 8; ++k) dev.push_back(uint8_t((cut - LEDGER_FEE) >> (8 * k)));
+        IC_CallResult<IC_CallReply> dr =
+            co_await IC_Call::unbounded_wait(CandidTypePrincipal{LEDGER}, "transfer")
+                .with_raw_args(dev);
+        if (dr) {
+          OkOrErr d = decode_ok_or_err(dr->bytes.vec(), {"BadFee", "InsufficientFunds", "TxTooOld",
+                                                         "TxCreatedInFuture", "TxDuplicate"});
+          if (d.decoded && d.ok) {
+            share = cut - LEDGER_FEE;
+            share_block = static_cast<uint64_t>(d.value);
+            share_save(share_block, share);
+            balance -= cut;
+          }
+        }
+      }
+    }
+
     e8s = balance - LEDGER_FEE;
     std::vector<uint8_t> args(std::begin(TRANSFER_PREFIX), std::end(TRANSFER_PREFIX));
     for (int k = 0; k < 8; ++k) args.push_back(uint8_t(e8s >> (8 * k)));
@@ -161,7 +229,10 @@ IC_Task<std::string> refuel(CandidTypePrincipal self) {
   g_busy_since_ns = 0;
   if (n.decoded && n.ok) {
     pending_save(0, 0);
-    log_append({IC_API::time(), e8s, block, n.value});
+    uint64_t share_block{0}, share{0};
+    share_load(share_block, share);
+    share_save(0, 0);
+    log_append({IC_API::time(), e8s, block, n.value, share, share_block});
     co_return reply(true, "converted into cycles", e8s, n.value);
   }
   // Refunded and too-old payments are final; anything else is tried again by

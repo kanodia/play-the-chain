@@ -263,17 +263,19 @@ static std::string u128(__uint128_t v) {
 static std::string fuel_json(IC_API &ic_api) {
   std::vector<FuelEntry> log = fuel_log();
   __uint128_t cycles{0};
-  uint64_t e8s{0};
+  uint64_t e8s{0}, dev_e8s{0};
   std::string entries;
   for (size_t i = 0; i < log.size(); ++i) {
     cycles += log[i].cycles;
     e8s += log[i].e8s;
+    dev_e8s += log[i].dev_e8s;
     if (i + 20 < log.size()) continue; // the last 20
     if (!entries.empty()) entries += ",";
     entries += "{\"time_ns\":" + std::to_string(log[i].time_ns) +
                ",\"e8s\":" + std::to_string(log[i].e8s) +
                ",\"block\":" + std::to_string(log[i].block) +
-               ",\"cycles\":" + u128(log[i].cycles) + "}";
+               ",\"cycles\":" + u128(log[i].cycles) +
+               ",\"dev_e8s\":" + std::to_string(log[i].dev_e8s) + "}";
   }
   return "\"balance\":" + u128(ic_api.get_canister_self_cycle_balance()) +
          ",\"liquid\":" + u128(ic_api.get_canister_liquid_cycle_balance()) +
@@ -282,6 +284,9 @@ static std::string fuel_json(IC_API &ic_api) {
          "\",\"account\":\"" + FUEL_ACCOUNT +
          "\",\"refuels\":" + std::to_string(log.size()) +
          ",\"e8s\":" + std::to_string(e8s) + ",\"cycles\":" + u128(cycles) +
+         ",\"dev_account\":\"" + DEV_ACCOUNT + "\",\"dev_percent\":" +
+         std::to_string(std::char_traits<char>::length(DEV_ACCOUNT) == 64 ? 10 : 0) +
+         ",\"dev_e8s\":" + std::to_string(dev_e8s) +
          ",\"log\":[" + entries + "]}";
 }
 

@@ -15,6 +15,8 @@
 // The canister's principal and ICP account, to send ICP to.
 extern const char *FUEL_PRINCIPAL;
 extern const char *FUEL_ACCOUNT;
+// The developer's ICP account, which gets DEV_SHARE_PERCENT of each refuel.
+extern const char *DEV_ACCOUNT;
 
 // Below this many liquid cycles (spendable above the freezing threshold) the
 // engine stops playing, so the canister never freezes and the page can still
@@ -26,6 +28,8 @@ struct FuelEntry {
   uint64_t e8s = 0;   // ICP converted, after the ledger fee
   uint64_t block = 0; // the ICP ledger block of the payment to the CMC
   __uint128_t cycles = 0;
+  uint64_t dev_e8s = 0;   // the developer's share, after the ledger fee
+  uint64_t dev_block = 0; // the ledger block of that payment
 };
 
 // Every refuel, oldest first. Kept in stable memory.

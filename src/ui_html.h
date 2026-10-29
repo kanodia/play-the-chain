@@ -558,6 +558,7 @@ static const char HOME_HTML[] = R"HTML(<!doctype html>
     <h3>Everyone plays on a shared tank of cycles</h3>
     <div class="sub">Anyone can top up the tank with ICP. The canister turns it into cycles itself, through the IC's cycles minting
       canister, and the fuel keeps every game free for everybody.</div>
+    <div class="sub" id="share-note" hidden></div>
     <div class="grid">
       <div class="tank">
         <div class="label">In the tank</div>
@@ -622,6 +623,12 @@ function renderInfo() {
   $("tank-state").classList.toggle("low", low);
   $("tank-bar").style.width = Math.min(100, spare / 1e12 * 100) + "%";
   const f = info.fuel;
+  // Said up front: the developer's share of each refuel, and where it goes.
+  if (f.dev_percent) {
+    $("share-note").hidden = false;
+    $("share-note").innerHTML = `${100 - f.dev_percent}% of every refuel becomes cycles for everyone; ${f.dev_percent}% goes to the developer who builds and runs Play the Chain, sent on-chain to account <code>${f.dev_account.slice(0, 8)}…${f.dev_account.slice(-6)}</code>` +
+      (f.dev_e8s ? ` (${icp(f.dev_e8s)} so far).` : ".");
+  }
   $("refuels").innerHTML = !f.refuels ? "No refuels yet. Be the first."
     : `${f.refuels} refuel${f.refuels === 1 ? "" : "s"} so far: ${icp(f.e8s)} → ${fmt(f.cycles)} cycles<br>` +
       f.log.slice().reverse().slice(0, 5).map((e) =>
