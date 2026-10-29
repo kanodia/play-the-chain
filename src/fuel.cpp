@@ -149,6 +149,15 @@ static IC_Task<OkOrErr> notify(CandidTypePrincipal self, uint64_t block) {
                               "InvalidTransaction", "Other"});
 }
 
+// Why a call failed, for the page and the canister log. Quotes would break
+// the JSON reply, so they go.
+static std::string why(const IC_CallResult<IC_CallReply> &r) {
+  std::string s = r.error().to_string();
+  for (char &c : s)
+    if (c == '"' || c == '\\' || c == '\n') c = ' ';
+  return s;
+}
+
 // A refuel in flight. Set before the first call; it expires, in case a later
 // message traps and never clears it.
 static uint64_t g_busy_since_ns = 0;
@@ -171,7 +180,7 @@ IC_Task<std::string> refuel(CandidTypePrincipal self) {
             .with_raw_args({std::begin(BALANCE_ARGS), std::end(BALANCE_ARGS)});
     if (!bal) {
       g_busy_since_ns = 0;
-      co_return reply(false, "the ICP ledger did not answer, try again");
+      co_return reply(false, "the ICP ledger did not answer, try again (" + why(bal) + ")");
     }
     uint64_t balance{0};
     CandidTypeRecord tokens;
@@ -193,6 +202,7 @@ IC_Task<std::string> refuel(CandidTypePrincipal self) {
         IC_CallResult<IC_CallReply> dr =
             co_await IC_Call::unbounded_wait(CandidTypePrincipal{LEDGER}, "transfer")
                 .with_raw_args(dev);
+        if (!dr) IC_API::debug_print("fuel: the developer share was not sent: " + why(dr));
         if (dr) {
           OkOrErr d = decode_ok_or_err(dr->bytes.vec(), {"BadFee", "InsufficientFunds", "TxTooOld",
                                                          "TxCreatedInFuture", "TxDuplicate"});
@@ -214,7 +224,8 @@ IC_Task<std::string> refuel(CandidTypePrincipal self) {
             .with_raw_args(args);
     if (!tr) {
       g_busy_since_ns = 0;
-      co_return reply(false, "the ICP ledger did not confirm the transfer");
+      IC_API::debug_print("fuel: the transfer to the CMC failed: " + why(tr));
+      co_return reply(false, "the ICP ledger did not confirm the transfer (" + why(tr) + ")");
     }
     OkOrErr t = decode_ok_or_err(tr->bytes.vec(),
                                  {"BadFee", "InsufficientFunds", "TxTooOld",
