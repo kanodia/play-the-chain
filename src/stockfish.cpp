@@ -726,7 +726,9 @@ static IC_Async http_request_update_async() {
   IC_HttpUpdateRequest request;
   ic_api.from_wire(request);
 
-  const std::string &method = request.method;
+  // Link-preview crawlers check pages and images with HEAD first; answer it
+  // like GET.
+  const std::string method = request.method == "HEAD" ? "GET" : request.method;
   std::string path = path_of(request.url);
   std::string body(request.body.begin(), request.body.end());
   uint64_t id{0};
@@ -762,6 +764,9 @@ static IC_Async http_request_update_async() {
     size_t len = path == "/og/home.jpg" ? sizeof OG_HOME_JPG : path == "/og/chess.jpg" ? sizeof OG_CHESS_JPG : sizeof OG_GOLF_JPG;
     response = respond(200, "image/jpeg", std::string(reinterpret_cast<const char *>(img), len),
                        "public, max-age=31536000, immutable");
+  } else if (method == "GET" && path == "/robots.txt") {
+    response = respond(200, "text/plain; charset=utf-8", "User-agent: *\nAllow: /\n",
+                       "public, max-age=86400");
   } else if (method == "GET" && path == "/fabric.js") {
     // Asked for as /fabric.js?v=<hash of its contents>: safe to keep a year.
     response = respond(200, "text/javascript; charset=utf-8", FABRIC_JS,
