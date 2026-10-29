@@ -41,6 +41,27 @@ bool GolfRound::holed() const {
 
 bool GolfRound::finished() const { return holed() || shots.size() >= GOLF_MAX_SHOTS; }
 
+static const char *DRILLED_PATH = "/golf_drilled_from.txt";
+
+static uint64_t drilled_from() {
+  std::ifstream file(DRILLED_PATH);
+  uint64_t id{0};
+  if (file) file >> id;
+  return id ? id : 1; // no record: every round is new
+}
+
+bool GolfRound::drilled() const { return id >= drilled_from(); }
+
+GolfCourse golf_round_course(const GolfRound &r) { return golf_course(r.day, r.drilled()); }
+
+static uint64_t rounds_count();
+
+void golf_mark_drilled_from() {
+  if (std::ifstream(DRILLED_PATH)) return;
+  std::ofstream file(DRILLED_PATH, std::ios::trunc);
+  file << rounds_count() + 1;
+}
+
 std::string golf_clean_name(const std::string &raw) {
   std::string out;
   for (char c : raw) {

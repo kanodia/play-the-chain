@@ -37,7 +37,9 @@ constexpr float GOLF_BALL_RADIUS = 0.15f;
 constexpr float GOLF_MAX_ANGLE = 180.0f; // degrees, 0 = straight right
 constexpr float GOLF_MAX_POWER = 100.0f; // percent
 
-GolfCourse golf_course(uint32_t day);
+// drilled: the cup cut into the ground. Rounds before the fix played holes
+// without one, and keep them, so they still recompute exactly.
+GolfCourse golf_course(uint32_t day, bool drilled = true);
 
 // One stroke from `from`. angle in degrees (0..180), power in percent.
 ShotResult golf_shoot(const GolfCourse &course, GolfPoint from, float angle,

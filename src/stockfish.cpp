@@ -91,12 +91,14 @@ static bool search(const std::string &fen, int depth, EngineResult &res,
 void canister_init() {
   IC_API ic_api(CanisterInit{std::string(__func__)}, false);
   engine_init();
+  golf_mark_drilled_from();
 }
 
 // Heap state is not kept across an upgrade, so set the engine up again.
 void canister_post_upgrade() {
   IC_API ic_api(CanisterPostUpgrade{std::string(__func__)}, false);
   engine_init();
+  golf_mark_drilled_from();
 }
 
 void bestmove() {
@@ -479,7 +481,7 @@ static IC_HttpResponse api_golf_shot(IC_API &ic_api, uint64_t id,
     return error(429, "today's on-chain budget is used up, back at 00:00 UTC");
   if (out_of_fuel(ic_api)) return error(503, OUT_OF_FUEL);
 
-  GolfCourse course = golf_course(r.day);
+  GolfCourse course = golf_round_course(r);
   uint64_t start = instructions();
   ShotResult res = golf_shoot(course, r.ball(course), angle, power);
   GolfShot shot{angle, power, res.end, res.how, instructions() - start};
@@ -493,8 +495,9 @@ static IC_HttpResponse api_golf_shot(IC_API &ic_api, uint64_t id,
 static IC_HttpResponse api_golf_round(uint64_t id) {
   GolfRound r;
   if (!golf_round_load(id, r)) return error(404, "no such round");
-  return json("{\"round\":" + golf_round_json(r, golf_course(r.day), false) +
-              ",\"course\":" + golf_course_json(golf_course(r.day)) + "}");
+  GolfCourse course = golf_round_course(r);
+  return json("{\"round\":" + golf_round_json(r, course, false) +
+              ",\"course\":" + golf_course_json(course) + "}");
 }
 
 // Simulates shot n of a round again, from where it started, and says whether
@@ -506,7 +509,7 @@ static IC_HttpResponse api_golf_replay(IC_API &ic_api, uint64_t id, size_t n) {
   if (!budget_left())
     return error(429, "today's on-chain budget is used up, back at 00:00 UTC");
   if (out_of_fuel(ic_api)) return error(503, OUT_OF_FUEL);
-  GolfCourse course = golf_course(r.day);
+  GolfCourse course = golf_round_course(r);
   GolfRound before = r;
   before.shots.resize(n);
   const GolfShot &s = r.shots[n];
@@ -623,9 +626,10 @@ static IC_HttpResponse api_test_golf_best(const std::string &body) {
       if (d < best) { best = d; pick = r; ba = a; bp = p; }
     }
   char buf[200];
-  std::snprintf(buf, sizeof buf, "{\"angle\":%.1f,\"power\":%.1f,\"holed\":%s,\"x\":%.4f,\"y\":%.4f,\"cup_x\":%.2f,\"par\":%d}",
+  std::snprintf(buf, sizeof buf, "{\"angle\":%.1f,\"power\":%.1f,\"holed\":%s,\"x\":%.4f,\"y\":%.4f,\"cup_x\":%.2f,\"par\":%d",
                 ba, bp, pick.how == ShotEnd::Holed ? "true" : "false", pick.end.x, pick.end.y, c.cup_x, c.par);
-  return json(buf);
+  return json(std::string(buf) + ",\"frames\":" + golf_frames_json(pick.frames) +
+              ",\"course\":" + golf_course_json(c) + "}");
 }
 
 static IC_HttpResponse api_test_mg_best(const std::string &body) {

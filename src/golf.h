@@ -29,7 +29,15 @@ struct GolfRound {
   int strokes() const;                            // an out of bounds costs one more
   bool holed() const;
   bool finished() const; // holed, or out of shots
+  bool drilled() const;  // played on a hole with its cup cut
 };
+
+// The course a round was played on.
+GolfCourse golf_round_course(const GolfRound &round);
+
+// Called after every upgrade: the first upgrade with the fix records which
+// round is the first one played on a drilled hole.
+void golf_mark_drilled_from();
 
 constexpr size_t GOLF_MAX_SHOTS = 12;
 
