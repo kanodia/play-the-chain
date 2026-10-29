@@ -22,7 +22,9 @@ static const char *SHARE_PATH = "/fuel_share.txt";
 // 10% of every refuel goes to the developer's ICP account; the rest becomes
 // cycles. Public on purpose: anyone can check where the share goes, and only
 // an upgrade by the canister's controllers can change it.
-const char *DEV_ACCOUNT = "";
+// NFID wallet of Abhishek Kanodia, principal
+// svt3k-45xi7-cln4t-sa2ns-k4sbp-m4i5d-gljaf-5644a-heo3s-2mvrm-vae.
+const char *DEV_ACCOUNT = "e5417f66bb8832ac908dddb388682ba9c87d91f6baaa30c3dc4f500d745f2319";
 constexpr uint64_t DEV_SHARE_PERCENT = 10;
 
 constexpr uint64_t LEDGER_FEE = 10'000;
