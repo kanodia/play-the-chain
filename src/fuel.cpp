@@ -149,6 +149,12 @@ static IC_Task<OkOrErr> notify(CandidTypePrincipal self, uint64_t block) {
                               "InvalidTransaction", "Other"});
 }
 
+void fuel_note_paid_share(uint64_t block, uint64_t e8s) {
+  uint64_t b{0}, x{0};
+  if (!fuel_log().empty() || share_load(b, x)) return;
+  share_save(block, e8s);
+}
+
 // Why a call failed, for the page and the canister log. Quotes would break
 // the JSON reply, so they go.
 static std::string why(const IC_CallResult<IC_CallReply> &r) {

@@ -99,6 +99,10 @@ void canister_post_upgrade() {
   IC_API ic_api(CanisterPostUpgrade{std::string(__func__)}, false);
   engine_init();
   golf_mark_drilled_from();
+  // The first refuel on 2026-10-29 paid the developer share (ledger block
+  // 39822184, 0.00489 ICP) but could not read the ledger's reply, so it was
+  // never recorded. Record it once, before the refuel is retried.
+  fuel_note_paid_share(39822184, 489000);
 }
 
 void bestmove() {

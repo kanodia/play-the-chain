@@ -35,6 +35,10 @@ struct FuelEntry {
 // Every refuel, oldest first. Kept in stable memory.
 std::vector<FuelEntry> fuel_log();
 
+// Records a developer share that was paid but not recorded, so the next
+// refuel does not take a second one. Does nothing once any refuel is logged.
+void fuel_note_paid_share(uint64_t block, uint64_t e8s);
+
 // Looks for ICP on the canister's account and turns it into cycles. Returns
 // the outcome as a JSON object.
 IC_Task<std::string> refuel(CandidTypePrincipal self);

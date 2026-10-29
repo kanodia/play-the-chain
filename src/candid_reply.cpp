@@ -89,8 +89,9 @@ OkOrErr decode_ok_or_err(const std::vector<std::byte> &bytes,
   if (idx >= types[top].fields.size()) return out;
   auto [hash, type] = types[top].fields[idx];
   if (hash == idl_hash("Ok")) {
-    if (type == -12) out.value = r.u64le(); // nat64
-    else if (type == -4) out.value = r.uleb(); // nat
+    // Candid type codes: nat64 is -8, nat is -3.
+    if (type == -8) out.value = r.u64le(); // nat64
+    else if (type == -3) out.value = r.uleb(); // nat
     else return out;
     out.ok = true;
   } else {
