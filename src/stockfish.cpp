@@ -654,6 +654,71 @@ static IC_HttpResponse api_test_mg_best(const std::string &body) {
 }
 #endif
 
+// ---------- link previews ----------
+// What a shared link shows on X, WhatsApp and the like. Every page carries
+// the same Open Graph tags (scripts/embed_ui.py); this fills them in.
+struct Preview {
+  std::string title, desc;
+  const char *image; // "home", "chess" or "golf"
+};
+
+static std::string attr(const std::string &s) {
+  std::string out;
+  for (char c : s) {
+    if (c == '&') out += "&amp;";
+    else if (c == '"') out += "&quot;";
+    else if (c == '<') out += "&lt;";
+    else if (c == '>') out += "&gt;";
+    else out += c;
+  }
+  return out;
+}
+
+static void replace_all(std::string &s, const std::string &from, const std::string &to) {
+  for (size_t at = s.find(from); at != std::string::npos; at = s.find(from, at + to.size()))
+    s.replace(at, from.size(), to);
+}
+
+static IC_HttpResponse page(IC_API &ic_api, const char *html, const std::string &path,
+                            const Preview &p) {
+  std::string origin = "https://" + ic_api.get_canister_self().get_text() + ".icp0.io";
+  std::string out = html;
+  replace_all(out, "__OG_TITLE__", attr(p.title));
+  replace_all(out, "__OG_DESC__", attr(p.desc));
+  replace_all(out, "__OG_URL__", attr(origin + path));
+  replace_all(out, "__OG_IMAGE__", origin + "/og/" + p.image + ".jpg?v=" + OG_V);
+  return respond(200, "text/html; charset=utf-8", out);
+}
+
+static const char *CHESS_DESC =
+    "Stockfish, the strongest open-source chess engine, runs inside an Internet Computer "
+    "canister. 13 computers compute and agree on every move. Free, no wallet.";
+static const char *GOLF_DESC =
+    "One hole a day. Every shot is simulated by Box2D on 13 computers, so nobody can fake a "
+    "score. Free, no wallet.";
+
+static Preview chess_preview(uint64_t id) {
+  Game g;
+  if (!id || !game_load(id, g)) return {"Can you beat Stockfish? It runs on-chain.", CHESS_DESC, "chess"};
+  size_t moves = (g.plies.size() + 1) / 2;
+  return {"Game #" + std::to_string(id) + " vs Stockfish, " + std::to_string(moves) +
+              (moves == 1 ? " move" : " moves") + ": replay it on-chain",
+          "Every move was computed by 13 computers and stored on-chain. Replay it, then play your own.",
+          "chess"};
+}
+
+static Preview golf_preview(uint64_t id) {
+  GolfRound r;
+  if (!id || !golf_round_load(id, r)) return {"Chain Golf: one hole a day. Can you sink it?", GOLF_DESC, "golf"};
+  std::string who = r.name == "anon" ? "Someone" : r.name;
+  int n = r.strokes();
+  std::string title = r.holed() ? (n == 1 ? who + " made a hole-in-one on Chain Golf"
+                                          : who + " holed today's Chain Golf in " + std::to_string(n))
+                                 : who + "'s round on Chain Golf: " + std::to_string(n) + " strokes";
+  return {title, "Every shot was simulated by Box2D on 13 computers. Watch the canister replay it, then beat it.",
+          "golf"};
+}
+
 // A coroutine, because POST /api/fuel calls the ICP ledger and the CMC before
 // it replies; every other route replies straight away.
 static IC_Async http_request_update_async() {
@@ -675,16 +740,28 @@ static IC_Async http_request_update_async() {
 
   IC_HttpResponse response = error(404, "not found");
   if (method == "GET" && path == "/") {
-    response = respond(200, "text/html; charset=utf-8", HOME_HTML);
+    response = page(ic_api, HOME_HTML, path,
+                    {"Play the Chain: games that run inside a smart contract",
+                     "Stockfish chess and Box2D golf in one Internet Computer canister. Every move is "
+                     "computed by 13 computers. Free, no wallet.", "home"});
   } else if (method == "GET" &&
              (path == "/chess" || (parse_id(path, "/game/", id, rest) && rest.empty()))) {
-    response = respond(200, "text/html; charset=utf-8", UI_HTML);
+    response = page(ic_api, UI_HTML, path, chess_preview(path == "/chess" ? 0 : id));
   } else if (method == "GET" &&
              (path == "/golf" || (parse_id(path, "/golf/", id, rest) && rest.empty()))) {
-    response = respond(200, "text/html; charset=utf-8", GOLF_HTML);
+    response = page(ic_api, GOLF_HTML, path, golf_preview(path == "/golf" ? 0 : id));
   } else if (method == "GET" &&
              (path == "/minigolf" || (parse_id(path, "/minigolf/", id, rest) && rest.empty()))) {
-    response = respond(200, "text/html; charset=utf-8", MINIGOLF_HTML);
+    response = page(ic_api, MINIGOLF_HTML, path,
+                    {"Chain Mini-Golf: Bullet physics on-chain",
+                     "A 3D mini-golf hole a day. Every putt is simulated by Bullet Physics inside an "
+                     "Internet Computer canister.", "golf"});
+  } else if (method == "GET" && (path == "/og/home.jpg" || path == "/og/chess.jpg" || path == "/og/golf.jpg")) {
+    // Asked for as /og/<page>.jpg?v=<hash of the images>: safe to keep a year.
+    const unsigned char *img = path == "/og/home.jpg" ? OG_HOME_JPG : path == "/og/chess.jpg" ? OG_CHESS_JPG : OG_GOLF_JPG;
+    size_t len = path == "/og/home.jpg" ? sizeof OG_HOME_JPG : path == "/og/chess.jpg" ? sizeof OG_CHESS_JPG : sizeof OG_GOLF_JPG;
+    response = respond(200, "image/jpeg", std::string(reinterpret_cast<const char *>(img), len),
+                       "public, max-age=31536000, immutable");
   } else if (method == "GET" && path == "/fabric.js") {
     // Asked for as /fabric.js?v=<hash of its contents>: safe to keep a year.
     response = respond(200, "text/javascript; charset=utf-8", FABRIC_JS,
@@ -733,7 +810,10 @@ static IC_Async http_request_update_async() {
     else if (method == "GET" && parse_id(rest, "/shot/", n, tail) && tail.empty())
       response = api_golf_replay(ic_api, id, static_cast<size_t>(n));
   } else if (method == "GET" && path == "/games") {
-    response = respond(200, "text/html; charset=utf-8", GAMES_HTML);
+    response = page(ic_api, GAMES_HTML, path,
+                    {"Every game on Play the Chain, and what it cost",
+                     "Every chess game and golf round played inside one Internet Computer canister, "
+                     "with the compute each one used.", "home"});
   } else if (method == "GET" && path == "/api/games") {
     response = api_games(ic_api);
   } else if (method == "GET" && path == "/api/info") {
