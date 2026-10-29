@@ -137,6 +137,8 @@
   @media (max-width: 700px) { .fuel .grid { grid-template-columns: minmax(0, 1fr); } }
   .foot { margin-top: 20px; color: var(--muted); font-size: 13px; max-width: 760px; }
 </style>
+<link rel="stylesheet" href="/fabric.css?v=__FABRIC_V__">
+<script type="module" src="/fabric.js?v=__FABRIC_V__"></script>
 </head>
 <body>
 <main>
@@ -407,6 +409,7 @@ async function refreshInfo() {
 
 let ticker = null;
 function animateThinking() {
+  window.Fabric?.think(true);
   let s = 0;
   steps(0);
   clearInterval(ticker);
@@ -487,6 +490,7 @@ async function call(method, path, body) {
 
 function afterUpdate() {
   clearInterval(ticker);
+  window.Fabric?.consensus();
   const last = [...game.moves].reverse().find((m) => m.by === "engine");
   steps(last ? 5 : -1, last);
   if (last) showReceipt(game.moves.lastIndexOf(last));
@@ -575,7 +579,7 @@ async function play(uci, move) {
     afterUpdate();
   } catch (e) {
     game.moves.pop();
-    clearInterval(ticker); steps(-1);
+    clearInterval(ticker); steps(-1); window.Fabric?.think(false);
     setStatus("The canister refused: " + e.message);
     showFuelIfEmpty(e);
     render();

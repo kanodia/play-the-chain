@@ -685,6 +685,13 @@ static IC_Async http_request_update_async() {
   } else if (method == "GET" &&
              (path == "/minigolf" || (parse_id(path, "/minigolf/", id, rest) && rest.empty()))) {
     response = respond(200, "text/html; charset=utf-8", MINIGOLF_HTML);
+  } else if (method == "GET" && path == "/fabric.js") {
+    // Asked for as /fabric.js?v=<hash of its contents>: safe to keep a year.
+    response = respond(200, "text/javascript; charset=utf-8", FABRIC_JS,
+                       "public, max-age=31536000, immutable");
+  } else if (method == "GET" && path == "/fabric.css") {
+    response = respond(200, "text/css; charset=utf-8", FABRIC_CSS,
+                       "public, max-age=31536000, immutable");
   } else if (method == "GET" && path == "/three.module.min.js") {
 #ifdef PTC_PLAYGROUND
     // Playground builds must stay under 2 MB, so they send the browser to the

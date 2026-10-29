@@ -85,6 +85,8 @@
   #fuel-msg { font-size: 14px; margin-top: 8px; min-height: 1.4em; }
   footer { margin-top: 44px; color: var(--muted); font-size: 13.5px; display: flex; gap: 18px; flex-wrap: wrap; border-top: 1px solid var(--line); padding-top: 18px; }
 </style>
+<link rel="stylesheet" href="/fabric.css?v=__FABRIC_V__">
+<script type="module" src="/fabric.js?v=__FABRIC_V__"></script>
 </head>
 <body>
 <main>
@@ -255,12 +257,14 @@ async function refuel() {
   const btn = $("refuel");
   btn.disabled = true;
   $("fuel-msg").textContent = "Asking the ICP ledger and the cycles minting canister…";
+  window.Fabric?.think(true);
   try {
     const r = await call("POST", "/api/fuel");
     $("fuel-msg").textContent = r.ok ? `Thank you! ${icp(r.e8s)} became ${fmt(r.cycles)} cycles for everyone.`
       : r.message.charAt(0).toUpperCase() + r.message.slice(1) + ".";
     info = await call("GET", "/api/info"); renderInfo();
-  } catch (e) { $("fuel-msg").textContent = "The refuel failed: " + e.message; }
+    window.Fabric?.consensus();
+  } catch (e) { $("fuel-msg").textContent = "The refuel failed: " + e.message; window.Fabric?.think(false); }
   btn.disabled = false;
 }
 $("refuel").onclick = refuel;

@@ -59,6 +59,8 @@
   .banner { background: var(--accent-dim); border: 1px solid rgba(94,242,200,.35); border-radius: 10px; padding: 10px 12px; font-size: 14px; margin-top: 12px; }
   .note { color: var(--muted); font-size: 12.5px; margin-top: 14px; max-width: 820px; }
 </style>
+<link rel="stylesheet" href="/fabric.css?v=__FABRIC_V__">
+<script type="module" src="/fabric.js?v=__FABRIC_V__"></script>
 </head>
 <body>
 <main>
@@ -305,8 +307,10 @@ async function shoot() {
   busy = true; $("shoot").disabled = true; $("thinking").hidden = false; draw();
   setStatus("The canister is simulating your shot…", true);
   try {
+    window.Fabric?.think(true);
     const r = await call("POST", `/api/golf/round/${round.id}/shot`, `${key}\n${$("angle").value}\n${$("power").value}`);
     $("thinking").hidden = true;
+    window.Fabric?.consensus();
     await animate(r.frames);
     round = r.round;
     const s = round.shots[round.shots.length - 1];
@@ -316,7 +320,7 @@ async function shoot() {
       <dt>instructions</dt><dd>${s.instructions.toLocaleString()}</dd>
       <dt>executed</dt><dd>replicated on 13 nodes, via consensus</dd>
       <dt>stored</dt><dd>/golf_round_${round.id}.txt · stable memory</dd>`;
-  } catch (e) { $("thinking").hidden = true; setStatus("The canister refused: " + e.message); }
+  } catch (e) { $("thinking").hidden = true; window.Fabric?.think(false); setStatus("The canister refused: " + e.message); }
   busy = false; $("shoot").disabled = false;
   if (round) after();
 }

@@ -1,0 +1,26 @@
+/* Shared by every page, loaded after the page's own styles: panels become
+   glass over the fabric (fabric.js), and pages cross-fade into each other. */
+@view-transition { navigation: auto; }
+::view-transition-old(root), ::view-transition-new(root) { animation-duration: .32s; }
+
+html { background: #050811; }               /* the fallback, without WebGL */
+body { background: transparent !important; }
+
+.panel, .tile, .stat, .card, .how > div, .stage, .moves {
+  background-color: rgba(18, 23, 34, .62) !important;
+  -webkit-backdrop-filter: blur(14px) saturate(1.25);
+  backdrop-filter: blur(14px) saturate(1.25);
+  border-color: rgba(128, 255, 229, .13) !important;
+}
+.card:hover, .panel:hover { border-color: rgba(128, 255, 229, .32) !important; }
+.card { transition: transform .25s ease, border-color .25s ease; }
+.card:hover { transform: translateY(-3px); }
+
+main { animation: rise .5s ease both; }
+@keyframes rise { from { opacity: 0; transform: translateY(10px); } }
+
+@media (prefers-reduced-motion: reduce) {
+  main { animation: none; }
+  .card:hover { transform: none; }
+  ::view-transition-old(root), ::view-transition-new(root) { animation: none; }
+}
