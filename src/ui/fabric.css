@@ -16,11 +16,67 @@ body { background: transparent !important; }
 .card { transition: transform .25s ease, border-color .25s ease; }
 .card:hover { transform: translateY(-3px); }
 
+/* The subnet's label, in the middle of the ring that fabric.js draws. */
+.fabric-hud {
+  position: fixed; z-index: -1; transform: translate(-50%, -50%); text-align: center; pointer-events: none;
+  font: 600 11px/1.6 ui-monospace, SFMono-Regular, Menlo, monospace; letter-spacing: .14em;
+  text-transform: uppercase; white-space: nowrap; color: rgba(128, 255, 229, .45);
+  transition: color .3s ease, text-shadow .3s ease;
+}
+.fabric-hud[data-mode="think"] { color: rgba(128, 255, 229, .8); animation: hud-blink 1.1s ease-in-out infinite; }
+.fabric-hud[data-mode="agree"] { color: #8fffe0; text-shadow: 0 0 12px rgba(94, 242, 199, .8); }
+@keyframes hud-blink { 50% { opacity: .45; } }
+
+/* Other pages: the subnet in a glass badge over the content, bottom right.
+   Small at rest; it grows while the chain computes. */
+.fabric-badge {
+  position: fixed; right: 16px; bottom: 16px; z-index: 50; width: 150px; height: 150px;
+  border-radius: 50%; pointer-events: none; transform-origin: 100% 100%; transform: scale(.52);
+  background: rgba(8, 13, 22, .55); border: 1px solid rgba(128, 255, 229, .16);
+  -webkit-backdrop-filter: blur(10px); backdrop-filter: blur(10px);
+  transition: transform .45s cubic-bezier(.2, .9, .3, 1.2), box-shadow .4s ease;
+}
+.fabric-badge canvas { width: 100%; height: 100%; display: block; }
+.fabric-badge .fabric-hud { position: absolute; left: 50%; top: 50%; z-index: auto; opacity: 0; transition: opacity .3s ease; }
+.fabric-badge[data-mode="think"], .fabric-badge[data-mode="agree"] { transform: scale(1); }
+.fabric-badge[data-mode="agree"] { box-shadow: 0 0 40px rgba(94, 242, 199, .35); }
+.fabric-badge[data-mode="think"] .fabric-hud, .fabric-badge[data-mode="agree"] .fabric-hud { opacity: 1; }
+@media (max-width: 760px) { .fabric-badge { right: 10px; bottom: 10px; } .fabric-badge[data-mode] { transform: scale(.4); } .fabric-badge[data-mode="think"], .fabric-badge[data-mode="agree"] { transform: scale(.8); } }
+
 main { animation: rise .5s ease both; }
 @keyframes rise { from { opacity: 0; transform: translateY(10px); } }
 
 @media (prefers-reduced-motion: reduce) {
-  main { animation: none; }
+  /* The subnet's label, in the middle of the ring that fabric.js draws. */
+.fabric-hud {
+  position: fixed; z-index: -1; transform: translate(-50%, -50%); text-align: center; pointer-events: none;
+  font: 600 11px/1.6 ui-monospace, SFMono-Regular, Menlo, monospace; letter-spacing: .14em;
+  text-transform: uppercase; white-space: nowrap; color: rgba(128, 255, 229, .45);
+  transition: color .3s ease, text-shadow .3s ease;
+}
+.fabric-hud[data-mode="think"] { color: rgba(128, 255, 229, .8); animation: hud-blink 1.1s ease-in-out infinite; }
+.fabric-hud[data-mode="agree"] { color: #8fffe0; text-shadow: 0 0 12px rgba(94, 242, 199, .8); }
+@keyframes hud-blink { 50% { opacity: .45; } }
+
+/* Other pages: the subnet in a glass badge over the content, bottom right.
+   Small at rest; it grows while the chain computes. */
+.fabric-badge {
+  position: fixed; right: 16px; bottom: 16px; z-index: 50; width: 150px; height: 150px;
+  border-radius: 50%; pointer-events: none; transform-origin: 100% 100%; transform: scale(.52);
+  background: rgba(8, 13, 22, .55); border: 1px solid rgba(128, 255, 229, .16);
+  -webkit-backdrop-filter: blur(10px); backdrop-filter: blur(10px);
+  transition: transform .45s cubic-bezier(.2, .9, .3, 1.2), box-shadow .4s ease;
+}
+.fabric-badge canvas { width: 100%; height: 100%; display: block; }
+.fabric-badge .fabric-hud { position: absolute; left: 50%; top: 50%; z-index: auto; opacity: 0; transition: opacity .3s ease; }
+.fabric-badge[data-mode="think"], .fabric-badge[data-mode="agree"] { transform: scale(1); }
+.fabric-badge[data-mode="agree"] { box-shadow: 0 0 40px rgba(94, 242, 199, .35); }
+.fabric-badge[data-mode="think"] .fabric-hud, .fabric-badge[data-mode="agree"] .fabric-hud { opacity: 1; }
+@media (max-width: 760px) { .fabric-badge { right: 10px; bottom: 10px; } .fabric-badge[data-mode] { transform: scale(.4); } .fabric-badge[data-mode="think"], .fabric-badge[data-mode="agree"] { transform: scale(.8); } }
+
+main { animation: none; }
   .card:hover { transform: none; }
+  .fabric-hud[data-mode="think"] { animation: none; }
+  .fabric-badge { transition: none; }
   ::view-transition-old(root), ::view-transition-new(root) { animation: none; }
 }
