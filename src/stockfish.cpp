@@ -604,6 +604,52 @@ static IC_HttpResponse api_mg_replay(IC_API &ic_api, uint64_t id, size_t n) {
               ",\"instructions\":" + std::to_string(used) + "}");
 }
 
+#ifdef PTC_PLAYGROUND
+// Test builds only: search a grid of shots from a spot and return the one that
+// ends nearest the cup (or holes), to check that every day's hole can be won.
+static IC_HttpResponse api_test_golf_best(const std::string &body) {
+  std::istringstream in(body);
+  uint32_t day;
+  float x, y;
+  if (!(in >> day >> x >> y)) return error(400, "send <day> <x> <y>");
+  GolfCourse c = golf_course(day);
+  if (y > 999) x = c.tee.x, y = c.tee.y; // "the tee"
+  float best = 1e9f, ba = 0, bp = 0;
+  ShotResult pick;
+  for (float a = 2.5f; a < 178; a += 2.5f)
+    for (float p = 4; p <= 100; p += 4) {
+      ShotResult r = golf_shoot(c, {x, y}, a, p);
+      float d = r.how == ShotEnd::Holed ? -1 : r.how == ShotEnd::Out ? 1e8f : std::fabs(r.end.x - c.cup_x);
+      if (d < best) { best = d; pick = r; ba = a; bp = p; }
+    }
+  char buf[200];
+  std::snprintf(buf, sizeof buf, "{\"angle\":%.1f,\"power\":%.1f,\"holed\":%s,\"x\":%.4f,\"y\":%.4f,\"cup_x\":%.2f,\"par\":%d}",
+                ba, bp, pick.how == ShotEnd::Holed ? "true" : "false", pick.end.x, pick.end.y, c.cup_x, c.par);
+  return json(buf);
+}
+
+static IC_HttpResponse api_test_mg_best(const std::string &body) {
+  std::istringstream in(body);
+  uint32_t day;
+  size_t stroke;
+  float x, y, z, from, to;
+  if (!(in >> day >> x >> y >> z >> stroke >> from >> to)) return error(400, "send <day> <x> <y> <z> <stroke> <yaw from> <yaw to>");
+  MgCourse c = mg_course(day);
+  float best = 1e9f, by = 0, bp = 0;
+  MgShot pick;
+  for (float yaw = from; yaw < to; yaw += 6)
+    for (float p = 8; p <= 100; p += 8) {
+      MgShot r = mg_shoot(c, {x, y, z}, yaw, p, mg_phase(day, stroke));
+      float d = r.how == MgEnd::Holed ? -1 : r.how == MgEnd::Out ? 1e8f : std::hypot(r.end.x - c.cup_x(), r.end.z - c.cup_z());
+      if (d < best) { best = d; pick = r; by = yaw; bp = p; }
+    }
+  char buf[220];
+  std::snprintf(buf, sizeof buf, "{\"yaw\":%.1f,\"power\":%.1f,\"holed\":%s,\"dist\":%.3f,\"x\":%.4f,\"y\":%.4f,\"z\":%.4f,\"par\":%d}",
+                by, bp, pick.how == MgEnd::Holed ? "true" : "false", best, pick.end.x, pick.end.y, pick.end.z, c.par);
+  return json(buf);
+}
+#endif
+
 // A coroutine, because POST /api/fuel calls the ICP ledger and the CMC before
 // it replies; every other route replies straight away.
 static IC_Async http_request_update_async() {
@@ -646,6 +692,12 @@ static IC_Async http_request_update_async() {
     // A fixed release of three.js: browsers keep it for a year.
     response = respond(200, "text/javascript; charset=utf-8", THREE_JS,
                        "public, max-age=31536000, immutable");
+#endif
+#ifdef PTC_PLAYGROUND
+  } else if (method == "POST" && path == "/api/test/golf-best") {
+    response = api_test_golf_best(body);
+  } else if (method == "POST" && path == "/api/test/mg-best") {
+    response = api_test_mg_best(body);
 #endif
   } else if (method == "GET" && path == "/api/minigolf/today") {
     response = api_mg_today();

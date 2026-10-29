@@ -5,3 +5,9 @@ canisters:
       steps:
         - type: pre-built
           path: ../build/stockfish.wasm
+  # Test build: no Stockfish, plus the /api/test/* search routes.
+  - name: pg
+    build:
+      steps:
+        - type: pre-built
+          path: ../playground/build/stockfish.wasm

@@ -12,6 +12,7 @@ constexpr float CUP_HALF_W = 0.32f, CUP_DEPTH = 0.45f;
 constexpr float STEP = 1.0f / 60.0f;
 constexpr int MAX_STEPS = 20 * 60;
 constexpr float MAX_SPEED = 26.0f; // m/s at full power
+constexpr uint32_t GOLF_CUP_FIX_DAY = 20756; // 2026-10-30
 
 // A small deterministic generator, so a day always gets the same hole.
 namespace {
@@ -46,16 +47,19 @@ GolfCourse golf_course(uint32_t day) {
     return h;
   };
 
+  // Until day 20756 the cup was never cut: the cup sits on a whole metre,
+  // like the samples, and the cut only happened at a sample short of it.
+  // Those holes stay as they were, so their rounds still recompute exactly.
+  bool cut = day < GOLF_CUP_FIX_DAY;
   for (float x = COURSE_LEFT; x <= COURSE_RIGHT + 0.01f; x += 1.0f) {
-    if (std::fabs(x - c.cup_x) < 1.0f) { // the cup, cut into the flat green
-      if (x < c.cup_x) {
-        c.ground.push_back({c.cup_x - CUP_HALF_W, cup_h});
-        c.ground.push_back({c.cup_x - CUP_HALF_W, cup_h - CUP_DEPTH});
-        c.ground.push_back({c.cup_x + CUP_HALF_W, cup_h - CUP_DEPTH});
-        c.ground.push_back({c.cup_x + CUP_HALF_W, cup_h});
-      }
-      continue;
+    if (!cut && x >= c.cup_x - 0.5f) { // the cup, cut into the flat green
+      c.ground.push_back({c.cup_x - CUP_HALF_W, cup_h});
+      c.ground.push_back({c.cup_x - CUP_HALF_W, cup_h - CUP_DEPTH});
+      c.ground.push_back({c.cup_x + CUP_HALF_W, cup_h - CUP_DEPTH});
+      c.ground.push_back({c.cup_x + CUP_HALF_W, cup_h});
+      cut = true;
     }
+    if (std::fabs(x - c.cup_x) < 1.0f) continue;
     c.ground.push_back({x, height(x)});
   }
   c.cup_y = cup_h;
