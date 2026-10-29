@@ -1637,7 +1637,8 @@ static const char GOLF_HTML[] = R"HTML(<!doctype html>
             <label for="power">Power</label><input id="power" type="range" min="1" max="100" step="0.5" value="45"><output id="power-v"></output>
           </div>
           <div class="row"><button id="shoot" class="primary">Shoot</button>
-            <span class="note" style="margin:0">or drag back from the ball, like a slingshot</span></div>
+            <span class="note" style="margin:0">or drag back from the ball, like a slingshot</span>
+            <button id="restart" style="margin-left:auto">New round</button></div>
         </div>
         <div id="spectator" class="banner" hidden></div>
         <div id="share" class="share" hidden>
@@ -1645,11 +1646,12 @@ static const char GOLF_HTML[] = R"HTML(<!doctype html>
           <button id="copy-btn">Copy link</button>
           <a id="share-x" target="_blank" rel="noopener">Post on X</a>
           <a id="share-wa" target="_blank" rel="noopener">WhatsApp</a>
+          <button id="again" class="primary" hidden>Play again</button>
         </div>
         <dl class="kv" id="receipt" hidden></dl>
       </div>
       <div class="panel">
-        <div class="label"><span>Shots · each one can be recomputed on-chain</span><button id="verify" hidden>Recompute all on-chain</button></div>
+        <div class="label"><span>Shots · each one can be recomputed on-chain</span><button id="verify" hidden>▶ Replay on-chain</button></div>
         <div class="shots" id="shots">No shots yet.</div>
       </div>
     </div>
@@ -1660,7 +1662,7 @@ static const char GOLF_HTML[] = R"HTML(<!doctype html>
       </div>
       <p class="note">Shots are paid from the same shared fuel tank as the chess. A shot is a few million instructions, about a
         thousandth of one chess move. Out of bounds costs a penalty stroke and puts the ball back. Each round has its own link:
-        open it and press <i>Recompute</i> to watch the canister simulate every shot again and check it lands in exactly the same place.</p>
+        open it and the canister replays it: it simulates every shot again and checks each lands in exactly the same place.</p>
     </div>
   </div>
 </main>
@@ -1804,17 +1806,21 @@ function statusText() {
   if (round.status === "holed") return round.strokes === 1 ? "Hole in one! The chain saw it." : `In the cup in ${round.strokes}. ${round.strokes <= course.par ? "Nice." : ""}`;
   if (round.status === "gave_up") return "Out of shots for this round.";
   if (!key) return `${round.name}'s round · ${round.strokes} stroke${round.strokes === 1 ? "" : "s"} so far`;
-  return round.shots.length ? "Line up the next one." : "Aim, then shoot. The canister will simulate it.";
+  return round.shots.length ? `Shot ${round.shots.length + 1}: like real golf, you play from where your ball stopped. Fewest strokes wins.` : "Aim, then shoot. The canister will simulate it.";
 }
 
 function after() {
   ball = { ...round.ball };
   cam.x = ball.x;
+  // Aim toward the cup: past it, the default shot would fly off the course.
+  const a = +$("angle").value, back = ball.x > course.cup.x;
+  if (back !== a > 90) { $("angle").value = (180 - a).toFixed(1); syncAim(); }
   setStatus(statusText());
   $("controls").hidden = !canShoot();
   $("setup").hidden = true;
   const done = round.status !== "playing";
   $("share").hidden = !(round.shots.length);
+  $("again").hidden = !(key && done);
   updateShare();
   renderShots(); hud(); draw();
   if (done) refreshBoard();
@@ -1836,9 +1842,11 @@ async function start() {
   $("start").disabled = false;
 }
 
-function animate(frames) {
+// `keep` collects the path across several shots (the replay); otherwise the
+// trail shows this shot only.
+function animate(frames, keep = null) {
   return new Promise((done) => {
-    trail = []; let i = 0;
+    trail = keep || []; let i = 0;
     const tick = () => {
       if (i >= frames.length) return done();
       const [x, y] = frames[i++]; ball = { x, y }; trail.push([x, y]); cam.x = x; draw();
@@ -1871,24 +1879,37 @@ async function shoot() {
   if (round) after();
 }
 $("shoot").onclick = shoot;
+// Your round for today is remembered in this browser; this starts a fresh one.
+$("again").onclick = $("restart").onclick = () => {
+  try { localStorage.removeItem(MINE(course.day)); } catch (e) {}
+  location.href = "/golf";
+};
 $("start").onclick = start;
 
-// Re-simulates every shot on-chain and checks each lands where the round says.
-$("verify").onclick = async () => {
-  $("verify").disabled = true;
-  const checks = {};
+// The replay: the canister simulates every shot again, from the tee, and
+// says whether each lands exactly where the round says it did.
+async function replay() {
+  $("verify").disabled = true; busy = true; $("controls").hidden = true;
+  const checks = {}, path = [];
+  ball = { ...course.tee }; cam.x = ball.x; trail = []; draw();
   for (let i = 0; i < round.shots.length; i++) {
     checks[i] = "…"; renderShots(checks);
+    setStatus(`Replaying shot ${i + 1} of ${round.shots.length}: the canister is simulating it again…`, true);
     try {
+      window.Fabric?.think(true);
       const r = await call("GET", `/api/golf/round/${round.id}/shot/${i}`);
-      await animate(r.frames);
+      window.Fabric?.consensus();
+      await animate(r.frames, path);
       checks[i] = r.matches;
-    } catch (e) { checks[i] = undefined; setStatus("Recompute failed: " + e.message); break; }
+    } catch (e) { window.Fabric?.think(false); checks[i] = undefined; setStatus("Replay failed: " + e.message); break; }
     renderShots(checks);
   }
-  ball = { ...round.ball }; draw();
-  $("verify").disabled = false;
-};
+  busy = false; $("verify").disabled = false;
+  const ok = round.shots.every((_, i) => checks[i] === true);
+  after(); renderShots(checks);
+  if (ok) setStatus(statusText().replace(/\.?$/, ".") + " Replayed on-chain: every shot landed exactly where it did the first time.");
+}
+$("verify").onclick = replay;
 
 // ---------- share ----------
 const shareUrl = () => location.origin + "/golf/" + round.id;
@@ -1921,7 +1942,7 @@ async function load() {
     if (!m) {
       course = t.course; ball = { ...course.tee }; cam.x = ball.x; hud(); draw();
       const mine = read(MINE(course.day));
-      if (mine) { location.replace("/golf/" + mine); return; }
+      if (mine) { location.replace("/golf/" + mine + "#resume"); return; }
       $("setup").hidden = false; setStatus("Today's hole is ready. Press Tee off.");
       return;
     }
@@ -1929,9 +1950,12 @@ async function load() {
     if (!key || round.day !== t.course.day) {
       key = null;
       $("spectator").hidden = false;
-      $("spectator").innerHTML = `You're watching ${round.name}'s round. Press <b>Recompute all on-chain</b> to have the canister simulate every shot again. <a href="/golf">Play today's hole</a>.`;
+      $("spectator").innerHTML = `You're watching ${round.name}'s round, replayed by the canister: it simulates every shot again. <a href="/golf">Play today's hole</a>.`;
     }
     after();
+    // A shared link replays the round; coming back to your own round resumes it.
+    if (location.hash !== "#resume" && round.shots.length) replay();
+    else history.replaceState(null, "", location.pathname);
   } catch (e) { setStatus("Could not reach the canister: " + e.message); }
 }
 window.addEventListener("resize", draw);
