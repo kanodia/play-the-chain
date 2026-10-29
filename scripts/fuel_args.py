@@ -28,7 +28,7 @@ def sleb(n):
         b = n & 0x7f; n >>= 7
         if (n == 0 and not b & 0x40) or (n == -1 and b & 0x40): return out + bytes([b])
         out += bytes([b | 0x80])
-NAT64, NAT8 = -12, -5
+NAT64, NAT8 = -8, -5  # Candid type codes: nat64 is -8 (0x78), nat8 -5 (0x7b)
 def transfer(amount, to_hex, fee=10000, memo=0x50555054):
     # types: 0 = record{e8s: nat64}; 1 = vec nat8; 2 = opt 1;
     #        3 = record{timestamp_nanos: nat64}; 4 = opt 3; 5 = TransferArgs
