@@ -476,6 +476,20 @@ static const char HOME_HTML[] = R"HTML(<!doctype html>
 <meta name="twitter:title" content="__OG_TITLE__">
 <meta name="twitter:description" content="__OG_DESC__">
 <meta name="twitter:image" content="__OG_IMAGE__">
+<script>
+window.ptcTrack = (name, data) => {
+  try { fetch("/api/event", { method: "POST", body: name, keepalive: true }).catch(() => {}); } catch (e) {}
+  try { window.umami && window.umami.track(name, data); } catch (e) {}
+};
+try {
+  if (!sessionStorage.getItem("ptc-visit")) {
+    sessionStorage.setItem("ptc-visit", "1");
+    const seen = localStorage.getItem("ptc-seen");
+    localStorage.setItem("ptc-seen", "1");
+    window.ptcTrack(seen ? "visit_return" : "visit_new");
+  }
+} catch (e) {}
+</script>
 <link rel="stylesheet" href="/fabric.css?v=718b5ac8e8">
 <script type="module" src="/fabric.js?v=718b5ac8e8"></script>
 </head>
@@ -655,6 +669,7 @@ function renderGolf(t) {
 }
 
 async function refuel() {
+  window.ptcTrack?.("refuel_click");
   const btn = $("refuel");
   btn.disabled = true;
   $("fuel-msg").textContent = "Asking the ICP ledger and the cycles minting canister…";
@@ -857,6 +872,20 @@ static const char UI_HTML[] = R"HTML(<!doctype html>
 <meta name="twitter:title" content="__OG_TITLE__">
 <meta name="twitter:description" content="__OG_DESC__">
 <meta name="twitter:image" content="__OG_IMAGE__">
+<script>
+window.ptcTrack = (name, data) => {
+  try { fetch("/api/event", { method: "POST", body: name, keepalive: true }).catch(() => {}); } catch (e) {}
+  try { window.umami && window.umami.track(name, data); } catch (e) {}
+};
+try {
+  if (!sessionStorage.getItem("ptc-visit")) {
+    sessionStorage.setItem("ptc-visit", "1");
+    const seen = localStorage.getItem("ptc-seen");
+    localStorage.setItem("ptc-seen", "1");
+    window.ptcTrack(seen ? "visit_return" : "visit_new");
+  }
+} catch (e) {}
+</script>
 <link rel="stylesheet" href="/fabric.css?v=718b5ac8e8">
 <script type="module" src="/fabric.js?v=718b5ac8e8"></script>
 </head>
@@ -1114,6 +1143,7 @@ function showFuelIfEmpty(e) {
 }
 
 async function refuel() {
+  window.ptcTrack?.("refuel_click");
   const btn = $("refuel");
   btn.disabled = true;
   $("fuel-msg").textContent = "Asking the ICP ledger and the cycles minting canister…";
@@ -1228,7 +1258,12 @@ function afterUpdate() {
   $("share").innerHTML = `<a href="/game/${game.id}">Game #${game.id}</a> · anyone can replay it`;
   updateShare();
   // The game just ended, in this visit: post it, unless the player said not to.
-  if (key && lastStatus === "playing" && game.status !== "playing" && autoPost()) postFeed();
+  if (key && lastStatus === "playing" && game.status !== "playing") {
+    const won = game.status === "checkmate" && game.moves.length && game.moves[game.moves.length - 1].by !== "engine";
+    window.ptcTrack?.("chess_end", { result: won ? "win" : game.status === "checkmate" ? "loss" : "draw", moves: Math.ceil(plies() / 2) });
+    if (won) window.ptcTrack?.("chess_win");
+    if (autoPost()) postFeed();
+  }
   lastStatus = game.status;
   refreshInfo();
   render();
@@ -1251,8 +1286,8 @@ function updateShare() {
   $("share-row").hidden = !game;
   if (!game) return;
   const url = shareUrl(), text = shareText();
-  $("share-x").href = "https://x.com/intent/post?text=" + encodeURIComponent(text) + "&url=" + encodeURIComponent(url);
-  $("share-wa").href = "https://wa.me/?text=" + encodeURIComponent(text + " " + url);
+  $("share-x").href = "https://x.com/intent/post?text=" + encodeURIComponent(text) + "&url=" + encodeURIComponent(url + "?via=x");
+  $("share-wa").href = "https://wa.me/?text=" + encodeURIComponent(text + " " + url + "?via=wa");
   // The native share sheet (phones, Safari) where there is one; otherwise copying is the main action.
   $("share-btn").hidden = !navigator.share;
   // Your own game, once it's over or has some moves in it, can go to the feed.
@@ -1276,12 +1311,13 @@ async function postFeed() {
   try {
     await call("POST", "/api/feed", `chess\n${game.id}\n${key}\n${$("player-name").value}`);
     $("feed-row").innerHTML = `<a href="/feed">📣 Posted · see the feed ▸</a>`;
+    window.ptcTrack?.("feed_post", { kind: "chess" });
   } catch (e) { b.disabled = false; b.textContent = "📣 Post to feed"; setStatus("Could not post: " + e.message); }
 }
 
 async function copyLink() {
   const btn = $("copy-btn");
-  try { await navigator.clipboard.writeText(shareUrl()); btn.textContent = "Copied ✓"; }
+  try { await navigator.clipboard.writeText(shareUrl() + "?via=copy"); btn.textContent = "Copied ✓"; window.ptcTrack?.("share", { game: "chess", to: "copy" }); }
   catch (e) { $("share-row").querySelector(".hint").textContent = shareUrl(); return; }
   setTimeout(() => { btn.textContent = "Copy link"; }, 1600);
 }
@@ -1301,6 +1337,7 @@ async function start() {
     game = await call("POST", "/api/game", depth + "\n" + $("side").value + "\n" + skill + "\n" + blunder);
     key = game.key; store(game.id, key);
     history.replaceState(null, "", "/game/" + game.id);
+    window.ptcTrack?.("chess_start", { level: $("depth").selectedOptions[0]?.textContent.trim() });
     view = null;
     $("setup").hidden = true;
     afterUpdate();
@@ -1370,6 +1407,10 @@ $("start").onclick = start;
 $("refuel").onclick = refuel;
 $("share-btn").onclick = share;
 $("post-feed").onclick = postFeed;
+// Which shares bring people back: the link says where it was shared.
+for (const [id, to] of [["share-x", "x"], ["share-wa", "wa"]])
+  $(id).addEventListener("click", () => window.ptcTrack?.("share", { game: "chess", to }));
+
 $("copy-btn").onclick = copyLink;
 load();
 </script>
@@ -1465,6 +1506,20 @@ static const char GAMES_HTML[] = R"HTML(<!doctype html>
 <meta name="twitter:title" content="__OG_TITLE__">
 <meta name="twitter:description" content="__OG_DESC__">
 <meta name="twitter:image" content="__OG_IMAGE__">
+<script>
+window.ptcTrack = (name, data) => {
+  try { fetch("/api/event", { method: "POST", body: name, keepalive: true }).catch(() => {}); } catch (e) {}
+  try { window.umami && window.umami.track(name, data); } catch (e) {}
+};
+try {
+  if (!sessionStorage.getItem("ptc-visit")) {
+    sessionStorage.setItem("ptc-visit", "1");
+    const seen = localStorage.getItem("ptc-seen");
+    localStorage.setItem("ptc-seen", "1");
+    window.ptcTrack(seen ? "visit_return" : "visit_new");
+  }
+} catch (e) {}
+</script>
 <link rel="stylesheet" href="/fabric.css?v=718b5ac8e8">
 <script type="module" src="/fabric.js?v=718b5ac8e8"></script>
 </head>
@@ -1731,6 +1786,20 @@ static const char GOLF_HTML[] = R"HTML(<!doctype html>
 <meta name="twitter:title" content="__OG_TITLE__">
 <meta name="twitter:description" content="__OG_DESC__">
 <meta name="twitter:image" content="__OG_IMAGE__">
+<script>
+window.ptcTrack = (name, data) => {
+  try { fetch("/api/event", { method: "POST", body: name, keepalive: true }).catch(() => {}); } catch (e) {}
+  try { window.umami && window.umami.track(name, data); } catch (e) {}
+};
+try {
+  if (!sessionStorage.getItem("ptc-visit")) {
+    sessionStorage.setItem("ptc-visit", "1");
+    const seen = localStorage.getItem("ptc-seen");
+    localStorage.setItem("ptc-seen", "1");
+    window.ptcTrack(seen ? "visit_return" : "visit_new");
+  }
+} catch (e) {}
+</script>
 <link rel="stylesheet" href="/fabric.css?v=718b5ac8e8">
 <script type="module" src="/fabric.js?v=718b5ac8e8"></script>
 </head>
@@ -1966,6 +2035,7 @@ async function start() {
     round = await call("POST", "/api/golf/round", $("name").value);
     key = round.key; store(KEY(round.id), key); store(MINE(round.day), String(round.id));
     history.replaceState(null, "", "/golf/" + round.id);
+    window.ptcTrack?.("golf_start");
     after();
   } catch (e) { setStatus("The canister refused: " + e.message); }
   $("start").disabled = false;
@@ -2007,9 +2077,17 @@ async function shoot() {
   } catch (e) { $("thinking").hidden = true; window.Fabric?.think(false); setStatus("The canister refused: " + e.message); }
   busy = false; $("shoot").disabled = false;
   if (round) after();
+  if (finishedNow) {
+    window.ptcTrack?.("golf_finish", { strokes: round.strokes });
+    if (round.status === "holed") window.ptcTrack?.("golf_holed", { strokes: round.strokes });
+  }
   if (finishedNow && autoPost()) $("post-feed")?.click();
 }
 $("shoot").onclick = shoot;
+// Which shares bring people back: the link says where it was shared.
+for (const [id, to] of [["share-x", "x"], ["share-wa", "wa"]])
+  $(id).addEventListener("click", () => window.ptcTrack?.("share", { game: "golf", to }));
+
 // Your round for today is remembered in this browser; this starts a fresh one.
 $("again").onclick = $("restart").onclick = () => {
   try { localStorage.removeItem(MINE(course.day)); } catch (e) {}
@@ -2056,6 +2134,7 @@ $("post-feed").onclick = async () => {
   try {
     await call("POST", "/api/feed", `golf\n${round.id}\n${key}\n`);
     b.outerHTML = `<a href="/feed">📣 Posted · see the feed ▸</a>`;
+    window.ptcTrack?.("feed_post", { kind: "golf" });
   } catch (e) { b.disabled = false; b.textContent = "📣 Post to feed"; setStatus("Could not post: " + e.message); }
 };
 
@@ -2069,13 +2148,13 @@ function shareText() {
 }
 function updateShare() {
   if (!round) return;
-  $("share-x").href = "https://x.com/intent/post?text=" + encodeURIComponent(shareText()) + "&url=" + encodeURIComponent(shareUrl());
-  $("share-wa").href = "https://wa.me/?text=" + encodeURIComponent(shareText() + " " + shareUrl());
+  $("share-x").href = "https://x.com/intent/post?text=" + encodeURIComponent(shareText()) + "&url=" + encodeURIComponent(shareUrl() + "?via=x");
+  $("share-wa").href = "https://wa.me/?text=" + encodeURIComponent(shareText() + " " + shareUrl() + "?via=wa");
   $("share-btn").hidden = !navigator.share;
 }
 $("share-btn").onclick = async () => { try { await navigator.share({ title: "Chain Golf", text: shareText(), url: shareUrl() }); } catch (e) {} };
 $("copy-btn").onclick = async () => {
-  try { await navigator.clipboard.writeText(shareUrl()); $("copy-btn").textContent = "Copied ✓"; } catch (e) { $("copy-btn").textContent = shareUrl(); return; }
+  try { await navigator.clipboard.writeText(shareUrl() + "?via=copy"); $("copy-btn").textContent = "Copied ✓"; window.ptcTrack?.("share", { game: "golf", to: "copy" }); } catch (e) { $("copy-btn").textContent = shareUrl(); return; }
   setTimeout(() => { $("copy-btn").textContent = "Copy link"; }, 1600);
 };
 
@@ -2186,6 +2265,20 @@ static const char MINIGOLF_HTML[] = R"HTML(<!doctype html>
 <meta name="twitter:title" content="__OG_TITLE__">
 <meta name="twitter:description" content="__OG_DESC__">
 <meta name="twitter:image" content="__OG_IMAGE__">
+<script>
+window.ptcTrack = (name, data) => {
+  try { fetch("/api/event", { method: "POST", body: name, keepalive: true }).catch(() => {}); } catch (e) {}
+  try { window.umami && window.umami.track(name, data); } catch (e) {}
+};
+try {
+  if (!sessionStorage.getItem("ptc-visit")) {
+    sessionStorage.setItem("ptc-visit", "1");
+    const seen = localStorage.getItem("ptc-seen");
+    localStorage.setItem("ptc-seen", "1");
+    window.ptcTrack(seen ? "visit_return" : "visit_new");
+  }
+} catch (e) {}
+</script>
 <link rel="stylesheet" href="/fabric.css?v=718b5ac8e8">
 <script type="module" src="/fabric.js?v=718b5ac8e8"></script>
 </head>
@@ -2517,6 +2610,7 @@ async function start() {
     round = await call("POST", "/api/minigolf/round", $("name").value);
     key = round.key; store(KEY(round.id), key); store(MINE(round.day), String(round.id));
     history.replaceState(null, "", "/minigolf/" + round.id);
+    window.ptcTrack?.("mg_start");
     after();
   } catch (e) { setStatus("The canister refused: " + e.message); }
   $("start").disabled = false;
@@ -2534,6 +2628,7 @@ async function shoot() {
     window.Fabric?.consensus();
     await animate(r.frames, phase);
     round = r.round;
+    if (round.status !== "playing") window.ptcTrack?.("mg_finish", { strokes: round.strokes });
     const s = round.shots[round.shots.length - 1];
     $("receipt").hidden = false;
     $("receipt").innerHTML = `<dt>putt</dt><dd>${s.yaw.toFixed(1)}° · ${s.power.toFixed(0)}% · ${s.how}</dd>
@@ -2573,13 +2668,13 @@ function shareText() {
   return "Playing 3D mini-golf where every putt is simulated by Bullet Physics inside an Internet Computer canister ⛳⛓";
 }
 function updateShare() {
-  $("share-x").href = "https://x.com/intent/post?text=" + encodeURIComponent(shareText()) + "&url=" + encodeURIComponent(shareUrl());
-  $("share-wa").href = "https://wa.me/?text=" + encodeURIComponent(shareText() + " " + shareUrl());
+  $("share-x").href = "https://x.com/intent/post?text=" + encodeURIComponent(shareText()) + "&url=" + encodeURIComponent(shareUrl() + "?via=x");
+  $("share-wa").href = "https://wa.me/?text=" + encodeURIComponent(shareText() + " " + shareUrl() + "?via=wa");
   $("share-btn").hidden = !navigator.share;
 }
 $("share-btn").onclick = async () => { try { await navigator.share({ title: "Chain Mini-Golf", text: shareText(), url: shareUrl() }); } catch (e) {} };
 $("copy-btn").onclick = async () => {
-  try { await navigator.clipboard.writeText(shareUrl()); $("copy-btn").textContent = "Copied ✓"; } catch (e) { $("copy-btn").textContent = shareUrl(); return; }
+  try { await navigator.clipboard.writeText(shareUrl() + "?via=copy"); $("copy-btn").textContent = "Copied ✓"; window.ptcTrack?.("share", { game: "minigolf", to: "copy" }); } catch (e) { $("copy-btn").textContent = shareUrl(); return; }
   setTimeout(() => { $("copy-btn").textContent = "Copy link"; }, 1600);
 };
 
@@ -2675,6 +2770,20 @@ static const char FEED_HTML[] = R"HTML(<!doctype html>
 <meta name="twitter:title" content="__OG_TITLE__">
 <meta name="twitter:description" content="__OG_DESC__">
 <meta name="twitter:image" content="__OG_IMAGE__">
+<script>
+window.ptcTrack = (name, data) => {
+  try { fetch("/api/event", { method: "POST", body: name, keepalive: true }).catch(() => {}); } catch (e) {}
+  try { window.umami && window.umami.track(name, data); } catch (e) {}
+};
+try {
+  if (!sessionStorage.getItem("ptc-visit")) {
+    sessionStorage.setItem("ptc-visit", "1");
+    const seen = localStorage.getItem("ptc-seen");
+    localStorage.setItem("ptc-seen", "1");
+    window.ptcTrack(seen ? "visit_return" : "visit_new");
+  }
+} catch (e) {}
+</script>
 <link rel="stylesheet" href="/fabric.css?v=718b5ac8e8">
 <script type="module" src="/fabric.js?v=718b5ac8e8"></script>
 </head>
@@ -2726,6 +2835,7 @@ function card(p, fresh) {
     b.onclick = async () => {
       if (mine(p.id).includes(k)) return;
       remember(p.id, [...mine(p.id), k]);
+      window.ptcTrack?.("feed_react", { kind: p.kind });
       b.classList.add("on"); b.textContent = `${EMOJI[k]} ${n + 1}`;
       try { const r = await call("POST", `/api/feed/${p.id}/react`, String(k)); b.textContent = `${EMOJI[k]} ${r.react[k]}`; } catch (e) {}
     };
@@ -2737,7 +2847,8 @@ function card(p, fresh) {
   }
   const share = document.createElement("a");
   share.target = "_blank"; share.rel = "noopener"; share.textContent = "Share on X";
-  share.href = "https://x.com/intent/post?text=" + encodeURIComponent(p.title + " · verified on-chain") + "&url=" + encodeURIComponent(location.origin + p.url);
+  share.href = "https://x.com/intent/post?text=" + encodeURIComponent(p.title + " · verified on-chain") + "&url=" + encodeURIComponent(location.origin + p.url + (p.url.includes("#") ? "" : "?via=x"));
+  share.addEventListener("click", () => window.ptcTrack?.("share", { game: p.kind, to: "x" }));
   actions.append(share);
   el.append(icon, title, meta, actions);
   return el;

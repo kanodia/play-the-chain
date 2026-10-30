@@ -35,6 +35,8 @@ service : {
   bestmove : (text, nat8) -> (SearchResult);
   // Clear the hash table and histories, as for a new game.
   new_game : () -> ();
+  // The analytics counters of the last n days, as JSON. Controllers only.
+  stats : (nat16) -> (text) query;
 
   // GET / serves the board; POST /move ("<depth>\n<fen>") plays a move.
   http_request : (HttpRequest) -> (HttpResponse) query;

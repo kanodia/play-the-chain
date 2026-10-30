@@ -296,6 +296,7 @@ async function start() {
     round = await call("POST", "/api/golf/round", $("name").value);
     key = round.key; store(KEY(round.id), key); store(MINE(round.day), String(round.id));
     history.replaceState(null, "", "/golf/" + round.id);
+    window.ptcTrack?.("golf_start");
     after();
   } catch (e) { setStatus("The canister refused: " + e.message); }
   $("start").disabled = false;
@@ -337,9 +338,17 @@ async function shoot() {
   } catch (e) { $("thinking").hidden = true; window.Fabric?.think(false); setStatus("The canister refused: " + e.message); }
   busy = false; $("shoot").disabled = false;
   if (round) after();
+  if (finishedNow) {
+    window.ptcTrack?.("golf_finish", { strokes: round.strokes });
+    if (round.status === "holed") window.ptcTrack?.("golf_holed", { strokes: round.strokes });
+  }
   if (finishedNow && autoPost()) $("post-feed")?.click();
 }
 $("shoot").onclick = shoot;
+// Which shares bring people back: the link says where it was shared.
+for (const [id, to] of [["share-x", "x"], ["share-wa", "wa"]])
+  $(id).addEventListener("click", () => window.ptcTrack?.("share", { game: "golf", to }));
+
 // Your round for today is remembered in this browser; this starts a fresh one.
 $("again").onclick = $("restart").onclick = () => {
   try { localStorage.removeItem(MINE(course.day)); } catch (e) {}
@@ -386,6 +395,7 @@ $("post-feed").onclick = async () => {
   try {
     await call("POST", "/api/feed", `golf\n${round.id}\n${key}\n`);
     b.outerHTML = `<a href="/feed">📣 Posted · see the feed ▸</a>`;
+    window.ptcTrack?.("feed_post", { kind: "golf" });
   } catch (e) { b.disabled = false; b.textContent = "📣 Post to feed"; setStatus("Could not post: " + e.message); }
 };
 
@@ -399,13 +409,13 @@ function shareText() {
 }
 function updateShare() {
   if (!round) return;
-  $("share-x").href = "https://x.com/intent/post?text=" + encodeURIComponent(shareText()) + "&url=" + encodeURIComponent(shareUrl());
-  $("share-wa").href = "https://wa.me/?text=" + encodeURIComponent(shareText() + " " + shareUrl());
+  $("share-x").href = "https://x.com/intent/post?text=" + encodeURIComponent(shareText()) + "&url=" + encodeURIComponent(shareUrl() + "?via=x");
+  $("share-wa").href = "https://wa.me/?text=" + encodeURIComponent(shareText() + " " + shareUrl() + "?via=wa");
   $("share-btn").hidden = !navigator.share;
 }
 $("share-btn").onclick = async () => { try { await navigator.share({ title: "Chain Golf", text: shareText(), url: shareUrl() }); } catch (e) {} };
 $("copy-btn").onclick = async () => {
-  try { await navigator.clipboard.writeText(shareUrl()); $("copy-btn").textContent = "Copied ✓"; } catch (e) { $("copy-btn").textContent = shareUrl(); return; }
+  try { await navigator.clipboard.writeText(shareUrl() + "?via=copy"); $("copy-btn").textContent = "Copied ✓"; window.ptcTrack?.("share", { game: "golf", to: "copy" }); } catch (e) { $("copy-btn").textContent = shareUrl(); return; }
   setTimeout(() => { $("copy-btn").textContent = "Copy link"; }, 1600);
 };
 

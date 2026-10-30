@@ -271,6 +271,7 @@ function renderGolf(t) {
 }
 
 async function refuel() {
+  window.ptcTrack?.("refuel_click");
   const btn = $("refuel");
   btn.disabled = true;
   $("fuel-msg").textContent = "Asking the ICP ledger and the cycles minting canister…";

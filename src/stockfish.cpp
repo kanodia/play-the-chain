@@ -6,11 +6,14 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdlib>
+#include <cctype>
+#include <cstring>
 #include <sstream>
 #include <string>
 
 #include "engine.h"
 #include "feed.h"
+#include "stats.h"
 #include "fuel.h"
 #include "games.h"
 #include "golf.h"
@@ -862,6 +865,70 @@ static IC_HttpResponse api_feed_react(uint64_t id, const std::string &body) {
               std::to_string(p.react[2]) + "]}");
 }
 
+// ---------- analytics ----------
+// Daily counters only (stats.h): which pages, from where, on what kind of
+// device. Nothing that identifies a visitor is kept.
+
+static std::string header(const IC_HttpUpdateRequest &r, const char *name) {
+  for (const IC_HeaderField &h : r.headers) {
+    if (h.name.size() != std::strlen(name)) continue;
+    bool same = true;
+    for (size_t i = 0; i < h.name.size() && same; ++i)
+      same = std::tolower(static_cast<unsigned char>(h.name[i])) == name[i];
+    if (same) return h.value;
+  }
+  return "";
+}
+
+static bool has(const std::string &s, const char *part) { return s.find(part) != std::string::npos; }
+
+// A page view: the page, where the visitor came from, the device, the language.
+static void count_page(const IC_HttpUpdateRequest &r, const std::string &page) {
+  uint32_t day = golf_today();
+  std::string ua = header(r, "user-agent");
+  // Link-preview fetchers and crawlers, counted on their own.
+  static const std::pair<const char *, const char *> BOTS[] = {
+      {"Twitterbot", "twitter"}, {"facebookexternalhit", "facebook"}, {"WhatsApp", "whatsapp"},
+      {"TelegramBot", "telegram"}, {"Discordbot", "discord"}, {"Slackbot", "slack"},
+      {"Googlebot", "google"}, {"bingbot", "bing"}, {"bot", "other"}, {"crawler", "other"},
+      {"spider", "other"}, {"HeadlessChrome", "headless"}};
+  for (const auto &[mark, name] : BOTS)
+    if (has(ua, mark)) { stats_add(day, std::string("bot:") + name); return; }
+
+  stats_add(day, "pv:" + page);
+  // ?via= on our own share links first, then the referrer's site.
+  std::string via, ref = header(r, "referer");
+  size_t v = r.url.find("via=");
+  if (v != std::string::npos) via = r.url.substr(v + 4, r.url.find('&', v) - v - 4);
+  std::string src = via == "x" || via == "wa" || via == "tg" || via == "oc" || via == "copy" ? via
+                    : ref.empty()                                               ? "direct"
+                    : has(ref, "icp0.io") || has(ref, "localhost")              ? ""
+                    : has(ref, "t.co") || has(ref, "x.com") || has(ref, "twitter.com") ? "x"
+                    : has(ref, "oc.app") || has(ref, "openchat")                ? "oc"
+                    : has(ref, "forum.dfinity.org")                             ? "forum"
+                    : has(ref, "google.")                                       ? "google"
+                    : has(ref, "whatsapp")                                      ? "wa"
+                    : has(ref, "t.me") || has(ref, "telegram")                  ? "tg"
+                    : has(ref, "funnai")                                        ? "funnai"
+                                                                                : "other";
+  if (!src.empty()) stats_add(day, "src:" + src); // empty: moving within the site
+  stats_add(day, std::string("dev:") + (has(ua, "iPad") || has(ua, "Tablet") ? "tablet"
+                                        : has(ua, "Mobi")                   ? "mobile"
+                                                                            : "desktop"));
+  std::string lang = header(r, "accept-language").substr(0, 2);
+  if (lang.size() == 2 && std::isalpha(static_cast<unsigned char>(lang[0])) &&
+      std::isalpha(static_cast<unsigned char>(lang[1])))
+    stats_add(day, "lang:" + std::string{char(std::tolower(lang[0])), char(std::tolower(lang[1]))});
+}
+
+// POST /api/event, body "<name>": a step of the funnel, from the page.
+static IC_HttpResponse api_event(const std::string &body) {
+  std::string name = body.substr(0, body.find('\n'));
+  if (!stats_event_allowed(name)) return error(400, "unknown event");
+  stats_add(golf_today(), "ev:" + name);
+  return json("{\"ok\":true}");
+}
+
 // ---------- link previews ----------
 // What a shared link shows on X, WhatsApp and the like. Every page carries
 // the same Open Graph tags (scripts/embed_ui.py); this fills them in.
@@ -1054,8 +1121,35 @@ static IC_Async http_request_update_async() {
   } else if (method == "POST" && parse_id(path, "/api/game/", id, rest) &&
              rest == "/move") {
     response = api_move(ic_api, id, body);
+  } else if (method == "POST" && path == "/api/event") {
+    response = api_event(body);
+  }
+  // Pages served are page views; the APIs and files they load are not.
+  if (request.method == "GET" && response.status_code == 200) {
+    static const std::pair<const char *, const char *> PAGES[] = {
+        {"/", "home"}, {"/chess", "chess"}, {"/golf", "golf"}, {"/minigolf", "minigolf"},
+        {"/feed", "feed"}, {"/games", "games"}};
+    std::string page;
+    for (const auto &[p, name] : PAGES)
+      if (path == p) page = name;
+    if (page.empty() && path.rfind("/game/", 0) == 0) page = "game";
+    if (page.empty() && path.rfind("/golf/", 0) == 0) page = "golf_round";
+    if (page.empty() && path.rfind("/minigolf/", 0) == 0) page = "minigolf_round";
+    if (!page.empty()) count_page(request, page);
   }
   ic_api.to_wire(response);
+}
+
+// stats : (nat16) -> (text) query, controllers only: the counters of the
+// last n days, as JSON.
+void stats() {
+  IC_API ic_api(CanisterQuery{std::string(__func__)}, false);
+  if (!ic_api.is_controller(ic_api.get_caller())) IC_API::trap("only the canister's controllers");
+  uint16_t days{7};
+  ic_api.from_wire(CandidTypeNat16{&days});
+  uint32_t today = golf_today();
+  uint32_t from = today - std::min<uint32_t>(std::max<uint16_t>(days, 1), 400) + 1;
+  ic_api.to_wire(CandidTypeText{stats_json(from, today)});
 }
 
 void http_request_update() { http_request_update_async(); }

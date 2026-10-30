@@ -390,6 +390,7 @@ async function start() {
     round = await call("POST", "/api/minigolf/round", $("name").value);
     key = round.key; store(KEY(round.id), key); store(MINE(round.day), String(round.id));
     history.replaceState(null, "", "/minigolf/" + round.id);
+    window.ptcTrack?.("mg_start");
     after();
   } catch (e) { setStatus("The canister refused: " + e.message); }
   $("start").disabled = false;
@@ -407,6 +408,7 @@ async function shoot() {
     window.Fabric?.consensus();
     await animate(r.frames, phase);
     round = r.round;
+    if (round.status !== "playing") window.ptcTrack?.("mg_finish", { strokes: round.strokes });
     const s = round.shots[round.shots.length - 1];
     $("receipt").hidden = false;
     $("receipt").innerHTML = `<dt>putt</dt><dd>${s.yaw.toFixed(1)}° · ${s.power.toFixed(0)}% · ${s.how}</dd>
@@ -446,13 +448,13 @@ function shareText() {
   return "Playing 3D mini-golf where every putt is simulated by Bullet Physics inside an Internet Computer canister ⛳⛓";
 }
 function updateShare() {
-  $("share-x").href = "https://x.com/intent/post?text=" + encodeURIComponent(shareText()) + "&url=" + encodeURIComponent(shareUrl());
-  $("share-wa").href = "https://wa.me/?text=" + encodeURIComponent(shareText() + " " + shareUrl());
+  $("share-x").href = "https://x.com/intent/post?text=" + encodeURIComponent(shareText()) + "&url=" + encodeURIComponent(shareUrl() + "?via=x");
+  $("share-wa").href = "https://wa.me/?text=" + encodeURIComponent(shareText() + " " + shareUrl() + "?via=wa");
   $("share-btn").hidden = !navigator.share;
 }
 $("share-btn").onclick = async () => { try { await navigator.share({ title: "Chain Mini-Golf", text: shareText(), url: shareUrl() }); } catch (e) {} };
 $("copy-btn").onclick = async () => {
-  try { await navigator.clipboard.writeText(shareUrl()); $("copy-btn").textContent = "Copied ✓"; } catch (e) { $("copy-btn").textContent = shareUrl(); return; }
+  try { await navigator.clipboard.writeText(shareUrl() + "?via=copy"); $("copy-btn").textContent = "Copied ✓"; window.ptcTrack?.("share", { game: "minigolf", to: "copy" }); } catch (e) { $("copy-btn").textContent = shareUrl(); return; }
   setTimeout(() => { $("copy-btn").textContent = "Copy link"; }, 1600);
 };
 

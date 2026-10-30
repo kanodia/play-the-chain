@@ -2,7 +2,7 @@
 [build-wasm]
 canister = "stockfish"
 did_path = "../src/stockfish.did"
-cpp_paths = ["../src/candid_reply.cpp", "../src/feed.cpp", "../src/fuel.cpp", "../src/games.cpp", "../src/golf.cpp", "../src/golf_sim.cpp", "../src/minigolf.cpp", "../src/minigolf_sim.cpp", "../src/stockfish.cpp", "../src/box2d/collision/*.cpp", "../src/box2d/common/*.cpp", "../src/box2d/dynamics/*.cpp", "../src/bullet/BulletCollision/BroadphaseCollision/*.cpp", "../src/bullet/BulletCollision/CollisionDispatch/*.cpp", "../src/bullet/BulletCollision/CollisionShapes/*.cpp", "../src/bullet/BulletCollision/NarrowPhaseCollision/*.cpp", "../src/bullet/BulletDynamics/ConstraintSolver/*.cpp", "../src/bullet/BulletDynamics/Dynamics/*.cpp", "../src/bullet/LinearMath/*.cpp", "engine_stub.cpp"]
+cpp_paths = ["../src/candid_reply.cpp", "../src/feed.cpp", "../src/stats.cpp", "../src/fuel.cpp", "../src/games.cpp", "../src/golf.cpp", "../src/golf_sim.cpp", "../src/minigolf.cpp", "../src/minigolf_sim.cpp", "../src/stockfish.cpp", "../src/box2d/collision/*.cpp", "../src/box2d/common/*.cpp", "../src/box2d/dynamics/*.cpp", "../src/bullet/BulletCollision/BroadphaseCollision/*.cpp", "../src/bullet/BulletCollision/CollisionDispatch/*.cpp", "../src/bullet/BulletCollision/CollisionShapes/*.cpp", "../src/bullet/BulletCollision/NarrowPhaseCollision/*.cpp", "../src/bullet/BulletDynamics/ConstraintSolver/*.cpp", "../src/bullet/BulletDynamics/Dynamics/*.cpp", "../src/bullet/LinearMath/*.cpp", "engine_stub.cpp"]
 cpp_include_dirs = ["../src", "../src/box2d/include", "../src/bullet"]
 cpp_compile_flags = ["-D SF_NO_THREADS", "-D _WASI_EMULATED_MMAN", "-D ICPP_ALLOW_UNBOUNDED_WAIT", "-D PTC_PLAYGROUND", "-Oz"]
 cpp_link_flags = ["-lwasi-emulated-mman", "-Wl,-z,stack-size=8388608"]
