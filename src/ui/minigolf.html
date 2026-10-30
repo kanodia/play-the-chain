@@ -445,11 +445,13 @@ async function shoot() {
   busy = false; $("shoot").disabled = false;
   if (round) after();
   if (finishedNow) {
-    // At or under par unlocks the next level.
-    if (round.status === "holed" && round.strokes <= course.par && mgLevels.unlock(round.level + 1)) {
-      mgLevels.set(round.level + 1);
-      setStatus(statusText() + ` 🔓 Level ${round.level + 1} unlocked!`);
-    }
+    // Holing it unlocks the next level.
+    const lv = round.level ?? 10;
+    if (round.status === "holed" && lv < 20) { mgLevels.unlock(lv + 1); mgLevels.set(lv + 1); }
+    if (round.status === "holed" && lv < 20) {
+      setStatus(statusText() + ` 🔓 Level ${lv + 1} unlocked!`);
+      $("again").textContent = `▶ Play level ${lv + 1}`;
+    } else if (round.status !== "holed" && lv < 20) setStatus(statusText() + ` Hole it to unlock level ${lv + 1}.`);
     if (autoPost()) $("post-feed")?.click();
   }
 }

@@ -513,11 +513,15 @@ function afterUpdate() {
     if (won) {
       window.ptcTrack?.("chess_win", { level: game.level_n });
       // A win unlocks the next level.
-      if (game.level_n && chessLevels.unlock(game.level_n + 1)) {
-        chessLevels.set(game.level_n + 1); ladder.refresh();
+      if (game.level_n && game.level_n < 20) {
+        chessLevels.unlock(game.level_n + 1); chessLevels.set(game.level_n + 1);
         setStatus(statusText() + ` 🔓 Level ${game.level_n + 1} unlocked!`);
       }
     }
+    // Your game is over: the ladder and Start come back for the next one.
+    ladder.refresh();
+    $("setup").hidden = false;
+    $("start").textContent = won ? `▶ Play level ${ladder.level()}` : "Play again";
     if (autoPost()) postFeed();
   }
   lastStatus = game.status;

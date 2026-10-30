@@ -1345,11 +1345,15 @@ function afterUpdate() {
     if (won) {
       window.ptcTrack?.("chess_win", { level: game.level_n });
       // A win unlocks the next level.
-      if (game.level_n && chessLevels.unlock(game.level_n + 1)) {
-        chessLevels.set(game.level_n + 1); ladder.refresh();
+      if (game.level_n && game.level_n < 20) {
+        chessLevels.unlock(game.level_n + 1); chessLevels.set(game.level_n + 1);
         setStatus(statusText() + ` 🔓 Level ${game.level_n + 1} unlocked!`);
       }
     }
+    // Your game is over: the ladder and Start come back for the next one.
+    ladder.refresh();
+    $("setup").hidden = false;
+    $("start").textContent = won ? `▶ Play level ${ladder.level()}` : "Play again";
     if (autoPost()) postFeed();
   }
   lastStatus = game.status;
@@ -2203,7 +2207,7 @@ function renderShots(checks = {}) {
 
 function statusText() {
   if (!round) return "Press Tee off to start your round.";
-  if (round.status === "holed") return round.strokes === 1 ? "Hole in one! The chain saw it." : `In the cup in ${round.strokes}. ${round.strokes <= course.par ? "Nice." : ""}`;
+  if (round.status === "holed") return round.strokes === 1 ? "Hole in one! The chain saw it." : `In the cup in ${round.strokes}.${round.strokes <= course.par ? " Nice." : ""}`;
   if (round.status === "gave_up") return "Out of shots for this round.";
   if (!key) return `${round.name}'s round · ${round.strokes} stroke${round.strokes === 1 ? "" : "s"} so far`;
   return round.shots.length ? `Shot ${round.shots.length + 1}: like real golf, you play from where your ball stopped. Fewest strokes wins.` : "Aim, then shoot. The canister will simulate it.";
@@ -2284,11 +2288,12 @@ async function shoot() {
     const lv = round.level ?? 10;
     window.ptcTrack?.("golf_finish", { strokes: round.strokes, level: lv });
     if (round.status === "holed") window.ptcTrack?.("golf_holed", { strokes: round.strokes, level: lv });
-    // At or under par unlocks the next level.
-    if (round.status === "holed" && round.strokes <= course.par && golfLevels.unlock(lv + 1)) {
-      golfLevels.set(lv + 1); ladder.refresh();
+    // Holing it unlocks the next level.
+    if (round.status === "holed" && lv < 20) { golfLevels.unlock(lv + 1); golfLevels.set(lv + 1); }
+    if (round.status === "holed" && lv < 20) {
       setStatus(statusText() + ` 🔓 Level ${lv + 1} unlocked!`);
-    }
+      $("again").textContent = `▶ Play level ${lv + 1}`;
+    } else if (round.status !== "holed" && lv < 20) setStatus(statusText() + ` Hole it to unlock level ${lv + 1}.`);
   }
   if (finishedNow && autoPost()) $("post-feed")?.click();
 }
@@ -2927,11 +2932,13 @@ async function shoot() {
   busy = false; $("shoot").disabled = false;
   if (round) after();
   if (finishedNow) {
-    // At or under par unlocks the next level.
-    if (round.status === "holed" && round.strokes <= course.par && mgLevels.unlock(round.level + 1)) {
-      mgLevels.set(round.level + 1);
-      setStatus(statusText() + ` 🔓 Level ${round.level + 1} unlocked!`);
-    }
+    // Holing it unlocks the next level.
+    const lv = round.level ?? 10;
+    if (round.status === "holed" && lv < 20) { mgLevels.unlock(lv + 1); mgLevels.set(lv + 1); }
+    if (round.status === "holed" && lv < 20) {
+      setStatus(statusText() + ` 🔓 Level ${lv + 1} unlocked!`);
+      $("again").textContent = `▶ Play level ${lv + 1}`;
+    } else if (round.status !== "holed" && lv < 20) setStatus(statusText() + ` Hole it to unlock level ${lv + 1}.`);
     if (autoPost()) $("post-feed")?.click();
   }
 }
