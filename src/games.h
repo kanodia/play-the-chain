@@ -23,6 +23,8 @@ struct Game {
   uint64_t id = 0;
   std::string key; // needed to move; the page keeps it in the browser
   int depth = 14;
+  int skill = 20;   // Stockfish's Skill Level: 20 is full strength
+  int blunder = 0;  // percent of engine moves that are a random legal move
   char human = 'w'; // the side the human plays
   uint64_t created_ns = 0;
   std::vector<Ply> plies;
@@ -32,7 +34,7 @@ struct Game {
 };
 
 // A new game with the next id. Not saved yet.
-Game game_new(int depth, char human, uint64_t now_ns);
+Game game_new(int depth, char human, uint64_t now_ns, int skill = 20, int blunder = 0);
 
 bool game_load(uint64_t id, Game &game);
 void game_save(const Game &game);

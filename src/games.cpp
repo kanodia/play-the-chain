@@ -30,7 +30,7 @@ uint64_t games_count() {
   return n;
 }
 
-Game game_new(int depth, char human, uint64_t now_ns) {
+Game game_new(int depth, char human, uint64_t now_ns, int skill, int blunder) {
   uint64_t id = games_count() + 1;
   {
     std::ofstream file(COUNT_PATH, std::ios::trunc);
@@ -46,17 +46,19 @@ Game game_new(int depth, char human, uint64_t now_ns) {
   game.id = id;
   game.key = sha256(seed).substr(0, 20);
   game.depth = depth;
+  game.skill = skill;
+  game.blunder = blunder;
   game.human = human;
   game.created_ns = now_ns;
   return game;
 }
 
-// Line 1: "<key> <depth> <human> <created_ns>"; then one ply per line:
+// Line 1: "<key> <depth> <human> <created_ns> <skill> <blunder>"; then one ply per line:
 // "<uci> <e|h> <time_ns> <instructions> <nodes> <depth> <score_cp> <quick>".
 void game_save(const Game &game) {
   std::ofstream file(game_path(game.id), std::ios::trunc);
   file << game.key << ' ' << game.depth << ' ' << game.human << ' '
-       << game.created_ns << '\n';
+       << game.created_ns << ' ' << game.skill << ' ' << game.blunder << '\n';
   for (const Ply &p : game.plies)
     file << p.uci << ' ' << (p.by_engine ? 'e' : 'h') << ' ' << p.time_ns
          << ' ' << p.instructions << ' ' << p.nodes << ' ' << p.depth << ' '
@@ -73,7 +75,10 @@ bool game_load(uint64_t id, Game &game) {
   game.id = id;
   file >> game.key >> game.depth >> game.human >> game.created_ns;
   std::string line;
-  std::getline(file, line); // rest of the header line
+  std::getline(file, line); // rest of the header line: the skill, if any
+  std::istringstream rest(line);
+  if (!(rest >> game.skill)) game.skill = 20; // games from before levels
+  if (!(rest >> game.blunder)) game.blunder = 0;
   while (std::getline(file, line)) {
     std::istringstream in(line);
     Ply p;

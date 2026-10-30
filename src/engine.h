@@ -40,5 +40,10 @@ struct GameState {
 GameState engine_game_state(const std::vector<std::string> &moves);
 
 // Search the position after `moves`, as engine_bestmove does for a FEN.
+// `skill` is Stockfish's Skill Level, 0..20: below 20 it picks among several
+// candidate moves on purpose, weaker the lower it is.
 bool engine_bestmove_after(const std::vector<std::string> &moves, int depth,
-                           uint64_t max_nodes, EngineResult &out);
+                           uint64_t max_nodes, EngineResult &out, int skill = 20);
+
+// One of the legal moves after `moves`, picked by `seed`; "" if there is none.
+std::string engine_random_move(const std::vector<std::string> &moves, uint64_t seed);

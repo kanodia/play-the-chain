@@ -212,10 +212,20 @@ static const char *status_text(GameStatus s) {
   }
 }
 
+// The name of a game's level, from its search settings.
+static const char *level_name(const Game &g) {
+  if (g.blunder >= 30) return "Beginner";
+  if (g.blunder > 0 || g.skill <= 2) return "Easy";
+  if (g.skill <= 12) return "Club";
+  return g.depth >= 18 ? "Full" : g.depth >= 14 ? "Strong" : "Casual";
+}
+
 static std::string game_json(const Game &g, bool with_key) {
   GameState st = engine_game_state(g.moves());
   std::string out = "{\"id\":" + std::to_string(g.id) +
                     ",\"depth\":" + std::to_string(g.depth) +
+                    ",\"skill\":" + std::to_string(g.skill) + ",\"blunder\":" + std::to_string(g.blunder) +
+                    ",\"level\":\"" + level_name(g) + "\"" +
                     ",\"human\":\"" + std::string(1, g.human) + "\"" +
                     ",\"created_ns\":" + std::to_string(g.created_ns) +
                     ",\"fen\":\"" + st.fen + "\"" + ",\"status\":\"" +
@@ -241,12 +251,27 @@ static std::string game_json(const Game &g, bool with_key) {
 
 // The engine plays its move in `g`, measured, and records it. The caller
 // checks budget_left() first.
+// Splitmix64: a well-mixed number from the game and the move, so a beginner's
+// mistakes are random-looking yet the same on every node and every replay.
+static uint64_t mix(uint64_t x) {
+  x += 0x9E3779B97F4A7C15ULL;
+  x = (x ^ (x >> 30)) * 0xBF58476D1CE4E5B9ULL;
+  x = (x ^ (x >> 27)) * 0x94D049BB133111EBULL;
+  return x ^ (x >> 31);
+}
+
 static void engine_reply(Game &g) {
   bool quick = quick_mode();
   EngineResult res;
   uint64_t start = instructions();
-  engine_bestmove_after(g.moves(), quick ? std::min(g.depth, QUICK_DEPTH) : g.depth,
-                        quick ? QUICK_NODES : MAX_NODES, res);
+  uint64_t roll = mix(g.id * 1000 + g.plies.size());
+  if (g.blunder > 0 && int(roll % 100) < g.blunder) {
+    // A beginner level's mistake: any legal move, no search.
+    res.bestmove = engine_random_move(g.moves(), roll / 100);
+  } else {
+    engine_bestmove_after(g.moves(), quick ? std::min(g.depth, QUICK_DEPTH) : g.depth,
+                          quick ? QUICK_NODES : MAX_NODES, res, g.skill);
+  }
   Ply p;
   p.uci = res.bestmove;
   p.by_engine = true;
@@ -367,6 +392,8 @@ static IC_HttpResponse api_games(IC_API &ic_api) {
     first = false;
     out += "{\"id\":" + std::to_string(g.id) +
            ",\"depth\":" + std::to_string(g.depth) +
+           ",\"skill\":" + std::to_string(g.skill) + ",\"blunder\":" + std::to_string(g.blunder) +
+                    ",\"level\":\"" + level_name(g) + "\"" +
            ",\"human\":\"" + std::string(1, g.human) + "\"" +
            ",\"created_ns\":" + std::to_string(g.created_ns) +
            ",\"last_ns\":" + std::to_string(last_ns) +
@@ -382,17 +409,26 @@ static IC_HttpResponse api_games(IC_API &ic_api) {
 }
 
 static IC_HttpResponse api_new_game(IC_API &ic_api, const std::string &body) {
-  size_t nl = body.find('\n');
-  int depth = std::atoi(body.substr(0, nl).c_str());
-  char human = nl == std::string::npos || nl + 1 >= body.size() ? 'w' : body[nl + 1];
-  if (depth < 1 || depth > MAX_DEPTH || (human != 'w' && human != 'b'))
-    return error(400, "send <depth 1-20>\\n<w|b>");
+  // "<depth>\n<w|b>" or, with a level, "<depth>\n<w|b>\n<skill 0-20>".
+  std::istringstream in(body);
+  std::string depth_text, side, skill_text, blunder_text;
+  std::getline(in, depth_text);
+  std::getline(in, side);
+  std::getline(in, skill_text);
+  std::getline(in, blunder_text);
+  int blunder = std::atoi(blunder_text.c_str());
+  int depth = std::atoi(depth_text.c_str());
+  char human = side.empty() ? 'w' : side[0];
+  int skill = skill_text.empty() ? 20 : std::atoi(skill_text.c_str());
+  if (depth < 1 || depth > MAX_DEPTH || (human != 'w' && human != 'b') || skill < 0 || skill > 20 ||
+      blunder < 0 || blunder > 90)
+    return error(400, "send <depth 1-20>\\n<w|b>\\n<skill 0-20>\\n<blunder % 0-90>");
   if (!budget_left() || g_games_today >= MAX_GAMES_PER_DAY)
     return error(429, "today's on-chain budget is used up, back at 00:00 UTC");
   if (out_of_fuel(ic_api)) return error(503, OUT_OF_FUEL);
   ++g_games_today;
 
-  Game g = game_new(depth, human, IC_API::time());
+  Game g = game_new(depth, human, IC_API::time(), skill, blunder);
   if (g.engine_to_move()) engine_reply(g);
   game_save(g);
   return json(game_json(g, true));
@@ -719,14 +755,15 @@ static bool feed_story(const FeedPost &p, std::string &title, std::string &sub, 
     uint64_t nodes{0};
     for (const Ply &ply : g.plies) nodes += ply.nodes;
     std::string m = std::to_string(moves) + (moves == 1 ? " move" : " moves");
+    std::string level = level_name(g);
     if (st.status == GameStatus::Checkmate && !g.plies.empty())
-      title = g.plies.back().by_engine ? "Stockfish beat " + who + " in " + m
-                                       : who + " beat Stockfish! \xF0\x9F\xA4\xAF";
+      title = g.plies.back().by_engine ? "Stockfish (" + level + ") beat " + who + " in " + m
+                                       : who + " beat Stockfish on " + level + "! \xF0\x9F\xA4\xAF";
     else if (st.status != GameStatus::Playing)
-      title = who + " drew with Stockfish in " + m;
+      title = who + " drew with Stockfish (" + level + ") in " + m;
     else
-      title = who + " has lasted " + m + " against Stockfish";
-    sub = "Depth " + std::to_string(g.depth) + " \xC2\xB7 " + who + " played " +
+      title = who + " has lasted " + m + " against Stockfish (" + level + ")";
+    sub = level + " level \xC2\xB7 " + who + " played " +
           (g.human == 'w' ? "white" : "black") + " \xC2\xB7 " + short_number(nodes) +
           " positions searched on-chain";
     url = "/game/" + std::to_string(p.ref);
@@ -872,7 +909,7 @@ static Preview chess_preview(uint64_t id) {
   Game g;
   if (!id || !game_load(id, g)) return {"Can you beat Stockfish? It runs on-chain.", CHESS_DESC, "chess"};
   size_t moves = (g.plies.size() + 1) / 2;
-  return {"Game #" + std::to_string(id) + " vs Stockfish, " + std::to_string(moves) +
+  return {"Game #" + std::to_string(id) + " vs Stockfish (" + level_name(g) + "), " + std::to_string(moves) +
               (moves == 1 ? " move" : " moves") + ": replay it on-chain",
           "Every move was computed by 13 computers and stored on-chain. Replay it, then play your own.",
           "chess"};

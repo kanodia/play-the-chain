@@ -197,7 +197,7 @@ function renderRows() {
       <td><a href="/game/${g.id}">#${g.id}</a></td>
       <td>${new Date(g.created_ns / 1e6).toLocaleString([], { dateStyle: "medium", timeStyle: "short" })}</td>
       <td>${g.human === "w" ? "White" : "Black"}</td>
-      <td>depth ${g.depth}${g.quick_moves ? ` <span class="pill" title="${g.quick_moves} quick replies after the daily allowance">${g.quick_moves} quick</span>` : ""}</td>
+      <td>${g.level || "depth " + g.depth}${g.quick_moves ? ` <span class="pill" title="${g.quick_moves} quick replies after the daily allowance">${g.quick_moves} quick</span>` : ""}</td>
       <td class="n">${Math.ceil(g.plies / 2)}</td>
       <td>${result(g)[0]}</td>
       <td class="n">${g.nodes.toLocaleString()}</td>

@@ -28,6 +28,10 @@ application subnet and agreed on by consensus.
 - **Stockfish without threads.** `SF_NO_THREADS` runs the search synchronously
   in the calling message (about 50 guarded lines in `src/sf`). A depth-18 move
   is ~12B instructions, inside the 40B per-message limit.
+- **Five chess levels.** Strong and Full are Stockfish at full strength.
+  Club uses Stockfish's Skill Level; Easy and Beginner add a blunder chance:
+  15% or 50% of their moves are a random legal move, picked by a hash of the
+  game and the move number, so every node (and every replay) plays the same.
 - **Box2D and Bullet are vendored unchanged** (Bullet without the modules a
   canister doesn't need). Golf runs at 60 Hz, mini-golf at 120 Hz with CCD.
 - **Storage:** every game, round and post is a small file in stable memory
@@ -45,8 +49,9 @@ application subnet and agreed on by consensus.
   `src/fuel.cpp`, said on the page), sends the rest to the cycles minting
   canister and calls `notify_top_up`. The ledger arguments are built as raw
   Candid by `scripts/fuel_args.py`.
-- **The feed.** Only the browser holding a round's or game's key can post it,
-  once. A post stores only which result it is: the headline is written from
+- **The feed.** Finished games and rounds are posted automatically unless the
+  player unticks "Post my result". Only the browser holding a round's or
+  game's key can post it, once. A post stores only which result it is: the headline is written from
   the canister's own record when the feed is read.
 
 ## Repository layout
@@ -108,7 +113,7 @@ icpp build-native && icpp run-native  # the engine natively, timed
 |---|---|
 | `GET /api/info` | canister, subnet, node count, today's budget, fuel tank |
 | `GET /api/games` | every chess game and its cost |
-| `POST /api/game` | body `<depth 1-20>\n<w\|b>`: a new game and its key |
+| `POST /api/game` | body `<depth 1-20>\n<w\|b>[\n<skill 0-20>\n<blunder % 0-90>]`: a new game and its key |
 | `GET /api/game/<id>` | a game, with a receipt for every engine move |
 | `POST /api/game/<id>/move` | body `<key>\n<uci move>`: your move and the reply |
 | `GET /api/golf/today` | today's hole and leaderboard |

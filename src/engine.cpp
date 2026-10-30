@@ -1,5 +1,7 @@
 #include "engine.h"
 
+#include <algorithm>
+
 #include <deque>
 #include <memory>
 
@@ -94,10 +96,22 @@ GameState engine_game_state(const std::vector<std::string> &moves) {
 }
 
 bool engine_bestmove_after(const std::vector<std::string> &moves, int depth,
-                           uint64_t max_nodes, EngineResult &out) {
+                           uint64_t max_nodes, EngineResult &out, int skill) {
   StateListPtr states;
   Position pos;
   if (!replay(moves, pos, states)) return false;
+  // Set for this search only: the engine is shared by every game.
+  Options["Skill Level"] = std::to_string(std::clamp(skill, 0, 20));
   search(pos, states, depth, max_nodes, out);
+  Options["Skill Level"] = std::string("20");
   return true;
+}
+
+std::string engine_random_move(const std::vector<std::string> &moves, uint64_t seed) {
+  StateListPtr states;
+  Position pos;
+  if (!replay(moves, pos, states)) return "";
+  MoveList<LEGAL> legal(pos);
+  if (legal.size() == 0) return "";
+  return UCI::move(*(legal.begin() + seed % legal.size()), false);
 }
