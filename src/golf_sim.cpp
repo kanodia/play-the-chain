@@ -26,10 +26,21 @@ struct Rng {
 };
 } // namespace
 
-GolfCourse golf_course(uint32_t day, bool drilled) {
+GolfCourse golf_course(uint32_t day, bool drilled, int level) {
   Rng rng(day);
   GolfCourse c;
   c.day = day;
+  c.level = level;
+  c.cup_half_w = level == GOLF_EASY ? 0.55f : level == GOLF_PRO ? 0.24f : CUP_HALF_W;
+  // Easy's cup also holds faster balls; Pro's only slow ones.
+  c.catch_speed = level == GOLF_EASY ? 3.0f : level == GOLF_PRO ? 1.0f : 1.5f;
+  if (level == GOLF_PRO) {
+    // A headwind (towards the tee), its own generator so the hole itself is
+    // the same at every level.
+    Rng w(uint64_t(day) ^ 0x57494E44ULL);
+    c.wind = -w.uniform(1.5f, 3.5f);
+  }
+  const float half = c.cup_half_w;
 
   // Two waves and a tilt, flattened at the tee and around the cup.
   float a1 = rng.uniform(0.6f, 1.8f), k1 = rng.uniform(0.12f, 0.28f), p1 = rng.uniform(0, 6.28f);
@@ -51,10 +62,10 @@ GolfCourse golf_course(uint32_t day, bool drilled) {
   bool cut = !drilled;
   for (float x = COURSE_LEFT; x <= COURSE_RIGHT + 0.01f; x += 1.0f) {
     if (!cut && x >= c.cup_x - 0.5f) { // the cup, cut into the flat green
-      c.ground.push_back({c.cup_x - CUP_HALF_W, cup_h});
-      c.ground.push_back({c.cup_x - CUP_HALF_W, cup_h - CUP_DEPTH});
-      c.ground.push_back({c.cup_x + CUP_HALF_W, cup_h - CUP_DEPTH});
-      c.ground.push_back({c.cup_x + CUP_HALF_W, cup_h});
+      c.ground.push_back({c.cup_x - half, cup_h});
+      c.ground.push_back({c.cup_x - half, cup_h - CUP_DEPTH});
+      c.ground.push_back({c.cup_x + half, cup_h - CUP_DEPTH});
+      c.ground.push_back({c.cup_x + half, cup_h});
       cut = true;
     }
     if (std::fabs(x - c.cup_x) < 1.0f) continue;
@@ -106,6 +117,15 @@ static void build_world(b2World &world, const GolfCourse &c) {
   }
 }
 
+// The ground's height at x, between its samples.
+static float ground_at(const GolfCourse &c, float x) {
+  for (size_t i = 0; i + 1 < c.ground.size(); ++i) {
+    const GolfPoint &a = c.ground[i], &b = c.ground[i + 1];
+    if (x >= a.x && x <= b.x) return b.x > a.x ? a.y + (b.y - a.y) * (x - a.x) / (b.x - a.x) : std::max(a.y, b.y);
+  }
+  return c.ground.empty() ? 0.0f : c.ground.back().y;
+}
+
 ShotResult golf_shoot(const GolfCourse &c, GolfPoint from, float angle, float power) {
   b2World world({0.0f, -9.81f});
   build_world(world, c);
@@ -133,6 +153,12 @@ ShotResult golf_shoot(const GolfCourse &c, GolfPoint from, float angle, float po
   ShotResult r;
   int still = 0;
   for (r.steps = 1; r.steps <= MAX_STEPS; ++r.steps) {
+    // Pro's wind pushes the ball in the air; on the ground the grass wins.
+    if (c.wind != 0.0f) {
+      b2Vec2 at = ball->GetPosition();
+      if (at.y > ground_at(c, at.x) + GOLF_BALL_RADIUS * 2.0f)
+        ball->ApplyForceToCenter({ball->GetMass() * c.wind, 0.0f}, true);
+    }
     world.Step(STEP, 8, 3);
     b2Vec2 p = ball->GetPosition();
     if (r.steps % 2 == 0) r.frames.push_back({p.x, p.y});
@@ -140,10 +166,10 @@ ShotResult golf_shoot(const GolfCourse &c, GolfPoint from, float angle, float po
       r.how = ShotEnd::Out;
       break;
     }
-    bool in_cup = std::fabs(p.x - c.cup_x) < CUP_HALF_W &&
+    bool in_cup = std::fabs(p.x - c.cup_x) < c.cup_half_w &&
                   p.y < c.cup_y - CUP_DEPTH + GOLF_BALL_RADIUS * 1.6f;
     float v = ball->GetLinearVelocity().Length();
-    if (in_cup && v < 1.5f) {
+    if (in_cup && v < c.catch_speed) {
       r.how = ShotEnd::Holed;
       break;
     }
@@ -159,9 +185,10 @@ ShotResult golf_shoot(const GolfCourse &c, GolfPoint from, float angle, float po
 
 std::string golf_course_json(const GolfCourse &c) {
   char buf[160];
-  std::string out = "{\"day\":" + std::to_string(c.day) + ",\"par\":" + std::to_string(c.par);
-  std::snprintf(buf, sizeof buf, ",\"cup\":{\"x\":%.3f,\"y\":%.3f,\"half_w\":%.3f,\"depth\":%.3f}",
-                c.cup_x, c.cup_y, CUP_HALF_W, CUP_DEPTH);
+  std::string out = "{\"day\":" + std::to_string(c.day) + ",\"par\":" + std::to_string(c.par) +
+                    ",\"level\":" + std::to_string(c.level);
+  std::snprintf(buf, sizeof buf, ",\"wind\":%.3f,\"cup\":{\"x\":%.3f,\"y\":%.3f,\"half_w\":%.3f,\"depth\":%.3f}",
+                c.wind, c.cup_x, c.cup_y, c.cup_half_w, CUP_DEPTH);
   out += buf;
   std::snprintf(buf, sizeof buf, ",\"tee\":{\"x\":%.3f,\"y\":%.3f},\"ball_radius\":%.3f",
                 c.tee.x, c.tee.y, GOLF_BALL_RADIUS);

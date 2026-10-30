@@ -23,6 +23,7 @@ struct GolfRound {
   uint32_t day = 0;
   uint64_t created_ns = 0;
   std::string name;
+  int level = GOLF_NORMAL;
   std::vector<GolfShot> shots;
 
   GolfPoint ball(const GolfCourse &course) const; // where the next shot starts
@@ -41,7 +42,8 @@ void golf_mark_drilled_from();
 
 constexpr size_t GOLF_MAX_SHOTS = 12;
 
-GolfRound golf_round_new(uint32_t day, const std::string &name, uint64_t now_ns);
+GolfRound golf_round_new(uint32_t day, const std::string &name, uint64_t now_ns,
+                         int level = GOLF_NORMAL);
 bool golf_round_load(uint64_t id, GolfRound &round);
 void golf_round_save(const GolfRound &round);
 std::vector<uint64_t> golf_day_rounds(uint32_t day);
@@ -52,4 +54,6 @@ std::string golf_clean_name(const std::string &raw);
 std::string golf_round_json(const GolfRound &round, const GolfCourse &course,
                             bool with_key);
 std::string golf_frames_json(const std::vector<GolfPoint> &frames);
-std::string golf_leaderboard_json(uint32_t day);
+std::string golf_leaderboard_json(uint32_t day, int level = GOLF_NORMAL);
+// "Easy", "Pro", or "" for Normal.
+const char *golf_level_name(int level);

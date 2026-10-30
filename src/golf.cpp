@@ -52,7 +52,11 @@ static uint64_t drilled_from() {
 
 bool GolfRound::drilled() const { return id >= drilled_from(); }
 
-GolfCourse golf_round_course(const GolfRound &r) { return golf_course(r.day, r.drilled()); }
+GolfCourse golf_round_course(const GolfRound &r) { return golf_course(r.day, r.drilled(), r.level); }
+
+const char *golf_level_name(int level) {
+  return level == GOLF_EASY ? "Easy" : level == GOLF_PRO ? "Pro" : "";
+}
 
 static uint64_t rounds_count();
 
@@ -81,7 +85,7 @@ static uint64_t rounds_count() {
   return n;
 }
 
-GolfRound golf_round_new(uint32_t day, const std::string &name, uint64_t now_ns) {
+GolfRound golf_round_new(uint32_t day, const std::string &name, uint64_t now_ns, int level) {
   uint64_t id = rounds_count() + 1;
   {
     std::ofstream file(COUNT_PATH, std::ios::trunc);
@@ -100,14 +104,18 @@ GolfRound golf_round_new(uint32_t day, const std::string &name, uint64_t now_ns)
   r.day = day;
   r.created_ns = now_ns;
   r.name = golf_clean_name(name);
+  r.level = level;
   return r;
 }
 
-// Line 1: "<key> <day> <created_ns> <name...>"; then one shot per line:
+// Line 1: "<key> <day> <created_ns> [#<level> ]<name...>" (no level: Normal;
+// names can't contain '#'); then one shot per line:
 // "<angle bits> <power bits> <end x bits> <end y bits> <r|h|o> <instructions>".
 void golf_round_save(const GolfRound &r) {
   std::ofstream file(round_path(r.id), std::ios::trunc);
-  file << r.key << ' ' << r.day << ' ' << r.created_ns << ' ' << r.name << '\n';
+  file << r.key << ' ' << r.day << ' ' << r.created_ns << ' ';
+  if (r.level != GOLF_NORMAL) file << '#' << r.level << ' ';
+  file << r.name << '\n';
   for (const GolfShot &s : r.shots)
     file << bits(s.angle) << ' ' << bits(s.power) << ' ' << bits(s.end.x) << ' '
          << bits(s.end.y) << ' '
@@ -125,6 +133,10 @@ bool golf_round_load(uint64_t id, GolfRound &r) {
   file >> r.key >> r.day >> r.created_ns;
   std::getline(file, r.name);
   if (!r.name.empty() && r.name.front() == ' ') r.name.erase(r.name.begin());
+  if (r.name.size() >= 2 && r.name[0] == '#' && r.name[1] >= '0' && r.name[1] <= '2') {
+    r.level = r.name[1] - '0';
+    r.name.erase(0, r.name.size() > 2 ? 3 : 2);
+  }
   std::string line;
   while (std::getline(file, line)) {
     std::istringstream in(line);
@@ -167,6 +179,7 @@ std::string golf_round_json(const GolfRound &r, const GolfCourse &c, bool with_k
   char buf[200];
   GolfPoint b = r.ball(c);
   std::string out = "{\"id\":" + std::to_string(r.id) + ",\"day\":" + std::to_string(r.day) +
+                    ",\"level\":" + std::to_string(r.level) +
                     ",\"name\":\"" + r.name + "\",\"created_ns\":" + std::to_string(r.created_ns) +
                     ",\"strokes\":" + std::to_string(r.strokes()) +
                     ",\"status\":\"" + (r.holed() ? "holed" : r.finished() ? "gave_up" : "playing") + "\"";
@@ -186,13 +199,13 @@ std::string golf_round_json(const GolfRound &r, const GolfCourse &c, bool with_k
 }
 
 // Today's best holed rounds: fewest strokes, then the earliest.
-std::string golf_leaderboard_json(uint32_t day) {
+std::string golf_leaderboard_json(uint32_t day, int level) {
   struct Entry { uint64_t id; std::string name; int strokes; uint64_t created_ns; };
   std::vector<Entry> holed;
   size_t played = 0, aces = 0;
   for (uint64_t id : golf_day_rounds(day)) {
     GolfRound r;
-    if (!golf_round_load(id, r) || r.shots.empty()) continue;
+    if (!golf_round_load(id, r) || r.shots.empty() || r.level != level) continue;
     ++played;
     if (!r.holed()) continue;
     if (r.strokes() == 1) ++aces;
@@ -201,7 +214,7 @@ std::string golf_leaderboard_json(uint32_t day) {
   std::sort(holed.begin(), holed.end(), [](const Entry &a, const Entry &b) {
     return a.strokes != b.strokes ? a.strokes < b.strokes : a.created_ns < b.created_ns;
   });
-  std::string out = "{\"played\":" + std::to_string(played) + ",\"holed\":" +
+  std::string out = "{\"level\":" + std::to_string(level) + ",\"played\":" + std::to_string(played) + ",\"holed\":" +
                     std::to_string(holed.size()) + ",\"aces\":" + std::to_string(aces) + ",\"top\":[";
   for (size_t i = 0; i < holed.size() && i < 20; ++i)
     out += std::string(i ? "," : "") + "{\"id\":" + std::to_string(holed[i].id) + ",\"name\":\"" +

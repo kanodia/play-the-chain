@@ -6,16 +6,20 @@
 #include <cmath>
 #include <cstdio>
 
+#include <cstdlib>
+
 #include "golf_sim.h"
 
 static float dist(const GolfCourse &c, GolfPoint p) { return std::fabs(p.x - c.cup_x); }
 
-int main() {
+// Optional argument: the level, 0 Easy, 1 Normal (default), 2 Pro.
+int main(int argc, char **argv) {
+  int level = argc > 1 ? std::atoi(argv[1]) : GOLF_NORMAL;
   int unsolved = 0, total_strokes = 0, shots = 0;
   long long steps = 0;
   auto t0 = std::chrono::steady_clock::now();
   for (uint32_t day = 20750; day < 20780; ++day) {
-    GolfCourse c = golf_course(day);
+    GolfCourse c = golf_course(day, true, level);
     ShotResult a = golf_shoot(c, c.tee, 45, 60), b = golf_shoot(c, c.tee, 45, 60);
     if (a.end.x != b.end.x || a.end.y != b.end.y || a.frames.size() != b.frames.size()) {
       std::printf("day %u: NOT deterministic\n", day);
@@ -44,7 +48,7 @@ int main() {
                 holed ? "holed" : "NOT holed", strokes);
   }
   double s = std::chrono::duration<double>(std::chrono::steady_clock::now() - t0).count();
-  std::printf("unsolved %d, avg strokes %.2f, %d shots, %.0f steps/shot, %.2f ms/shot native\n",
-              unsolved, total_strokes / 30.0, shots, double(steps) / shots, 1000 * s / shots);
+  std::printf("level %d: unsolved %d, avg strokes %.2f, %d shots, %.0f steps/shot, %.2f ms/shot native\n",
+              level, unsolved, total_strokes / 30.0, shots, double(steps) / shots, 1000 * s / shots);
   return unsolved;
 }

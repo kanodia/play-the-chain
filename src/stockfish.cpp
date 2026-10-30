@@ -494,11 +494,19 @@ static uint32_t golf_today() {
   return static_cast<uint32_t>(IC_API::time() / 86'400'000'000'000ULL);
 }
 
-static IC_HttpResponse api_golf_today() {
+// ?level=0|1|2 in a URL; Normal when absent.
+static int level_param(const std::string &url) {
+  size_t q = url.find("level=");
+  int level = q == std::string::npos ? GOLF_NORMAL : std::atoi(url.c_str() + q + 6);
+  return level >= GOLF_EASY && level <= GOLF_PRO ? level : GOLF_NORMAL;
+}
+
+static IC_HttpResponse api_golf_today(const std::string &url) {
   roll_day();
   uint32_t day = golf_today();
-  return json("{\"course\":" + golf_course_json(golf_course(day)) +
-              ",\"leaderboard\":" + golf_leaderboard_json(day) + "}");
+  int level = level_param(url);
+  return json("{\"course\":" + golf_course_json(golf_course(day, true, level)) +
+              ",\"leaderboard\":" + golf_leaderboard_json(day, level) + "}");
 }
 
 static IC_HttpResponse api_golf_new(IC_API &ic_api, const std::string &body) {
@@ -507,9 +515,13 @@ static IC_HttpResponse api_golf_new(IC_API &ic_api, const std::string &body) {
   if (out_of_fuel(ic_api)) return error(503, OUT_OF_FUEL);
   ++g_golf_today;
   uint32_t day = golf_today();
-  GolfRound r = golf_round_new(day, body, IC_API::time());
+  // "<name>" or "<name>\n<level 0-2>"
+  size_t nl = body.find('\n');
+  int level = nl == std::string::npos ? GOLF_NORMAL : std::atoi(body.c_str() + nl + 1);
+  if (level < GOLF_EASY || level > GOLF_PRO) return error(400, "level is 0, 1 or 2");
+  GolfRound r = golf_round_new(day, body.substr(0, nl), IC_API::time(), level);
   golf_round_save(r);
-  return json(golf_round_json(r, golf_course(day), true));
+  return json(golf_round_json(r, golf_round_course(r), true));
 }
 
 static IC_HttpResponse api_golf_shot(IC_API &ic_api, uint64_t id,
@@ -740,7 +752,9 @@ static bool feed_story(const FeedPost &p, std::string &title, std::string &sub, 
     if (!golf_round_load(p.ref, r)) return false;
     GolfCourse c = golf_round_course(r);
     int n = r.strokes();
-    std::string hole = r.day == golf_today() ? "today's hole" : "the " + day_text(r.day) + " hole";
+    std::string lv = golf_level_name(r.level);
+    std::string hole = (r.day == golf_today() ? "today's " : "the " + day_text(r.day) + " ") +
+                       (lv.empty() ? "" : lv + " ") + "hole";
     title = r.holed() ? (n == 1 ? who + " made a hole-in-one \xE2\x9B\xB3"
                                 : who + " holed " + hole + " in " + std::to_string(n) +
                                       (n <= c.par ? " \xE2\x9B\xB3" : ""))
@@ -987,9 +1001,10 @@ static Preview golf_preview(uint64_t id) {
   if (!id || !golf_round_load(id, r)) return {"Chain Golf: one hole a day. Can you sink it?", GOLF_DESC, "golf"};
   std::string who = r.name == "anon" ? "Someone" : r.name;
   int n = r.strokes();
-  std::string title = r.holed() ? (n == 1 ? who + " made a hole-in-one on Chain Golf"
-                                          : who + " holed today's Chain Golf in " + std::to_string(n))
-                                 : who + "'s round on Chain Golf: " + std::to_string(n) + " strokes";
+  std::string lv = golf_level_name(r.level), on = lv.empty() ? "" : " (" + lv + ")";
+  std::string title = r.holed() ? (n == 1 ? who + " made a hole-in-one on Chain Golf" + on
+                                          : who + " holed today's Chain Golf" + on + " in " + std::to_string(n))
+                                 : who + "'s round on Chain Golf" + on + ": " + std::to_string(n) + " strokes";
   return {title, "Every shot was simulated by Box2D on 13 computers. Watch the canister replay it, then beat it.",
           "golf"};
 }
@@ -1092,7 +1107,7 @@ static IC_Async http_request_update_async() {
     else if (method == "GET" && parse_id(rest, "/shot/", n, tail) && tail.empty())
       response = api_mg_replay(ic_api, id, static_cast<size_t>(n));
   } else if (method == "GET" && path == "/api/golf/today") {
-    response = api_golf_today();
+    response = api_golf_today(request.url);
   } else if (method == "POST" && path == "/api/golf/round") {
     response = api_golf_new(ic_api, body);
   } else if (parse_id(path, "/api/golf/round/", id, rest)) {

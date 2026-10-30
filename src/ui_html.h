@@ -1766,6 +1766,10 @@ static const char GOLF_HTML[] = R"HTML(<!doctype html>
   button.primary { background: var(--accent); color: #062a20; border-color: var(--accent); font-weight: 600; }
   button:disabled { opacity: .5; cursor: default; }
   input[type=text] { width: 180px; }
+  .levels { display: flex; gap: 6px; flex-basis: 100%; }
+  .levels button { flex: 1; padding: 8px 6px; }
+  .levels button.on { border-color: var(--accent); background: rgba(94,242,200,.14); color: var(--accent); font-weight: 600; }
+  .levels small { display: block; font-size: 11.5px; color: var(--muted); font-weight: 400; }
   .aim { display: grid; grid-template-columns: max-content minmax(0, 1fr) 4.5em; gap: 8px 12px; align-items: center; margin-top: 12px; font-size: 14px; }
   .aim output { font-variant-numeric: tabular-nums; text-align: right; color: var(--muted); }
   input[type=range] { width: 100%; accent-color: #5ef2c8; }
@@ -1831,6 +1835,11 @@ try {
       <div class="panel">
         <div id="status" class="status">Loading today's hole from the canister…</div>
         <div id="setup" class="row" hidden>
+          <div class="levels" id="levels" role="radiogroup" aria-label="Level">
+            <button data-level="0">🐣 Easy<small>wide cup · aim guide</small></button>
+            <button data-level="1">⛳ Normal<small>the classic</small></button>
+            <button data-level="2">🔥 Pro<small>tight cup · headwind</small></button>
+          </div>
           <input id="name" type="text" maxlength="16" placeholder="Your name (optional)" aria-label="Your name for the leaderboard">
           <button id="start" class="primary">Tee off</button>
           <label class="auto"><input type="checkbox" id="autopost" checked> 📣 Post my result to the feed</label>
@@ -1862,7 +1871,7 @@ try {
     </div>
     <div>
       <div class="panel">
-        <div class="label"><span>Today's leaderboard</span><span id="lb-stats"></span></div>
+        <div class="label"><span id="lb-label">Today's leaderboard</span><span id="lb-stats"></span></div>
         <ol class="board" id="board"></ol>
       </div>
       <p class="note">Shots are paid from the same shared fuel tank as the chess. A shot is a few million instructions, about a
@@ -1874,7 +1883,10 @@ try {
 <script>
 const $ = (id) => document.getElementById(id);
 const fmt = (n) => n >= 1e9 ? (n / 1e9).toFixed(2) + "B" : n >= 1e6 ? (n / 1e6).toFixed(1) + "M" : n >= 1e3 ? (n / 1e3).toFixed(1) + "k" : String(n);
-const KEY = (id) => "golf_key_" + id, MINE = (day) => "golf_round_" + day;
+const LEVELS = ["Easy", "Normal", "Pro"];
+let level = 1; // the level picked for a new round; a round keeps its own
+try { const l = +localStorage.getItem("ptc-golf-level"); if (l >= 0 && l <= 2 && localStorage.getItem("ptc-golf-level") !== null) level = l; } catch (e) {}
+const KEY = (id) => "golf_key_" + id, MINE = (day, lv = level) => "golf_round_" + day + (lv === 1 ? "" : "_" + lv);
 const store = (k, v) => { try { localStorage.setItem(k, v); } catch (e) {} };
 const read = (k) => { try { return localStorage.getItem(k); } catch (e) { return null; } };
 
@@ -1951,6 +1963,27 @@ function drawAim(v) {
   ctx.strokeStyle = "#ffd666"; ctx.lineWidth = 3; ctx.beginPath(); ctx.moveTo(bx, by); ctx.lineTo(ex, ey); ctx.stroke();
   ctx.fillStyle = "#ffd666"; ctx.beginPath();
   ctx.arc(ex, ey, 4, 0, 6.2832); ctx.fill();
+  if ((course.level ?? 1) === 0) drawGuide(v, a, p);
+}
+
+// Easy's aim guide: the flight until the ball first lands, worked out here
+// with the same gravity, launch speed and air drag as the canister's Box2D.
+// Only a guide: the bounces and the roll are the chain's to compute.
+function groundAt(x) {
+  const g = course.ground;
+  for (let i = 0; i + 1 < g.length; i++)
+    if (x >= g[i][0] && x <= g[i + 1][0]) return g[i][1] + (g[i + 1][1] - g[i][1]) * (x - g[i][0]) / ((g[i + 1][0] - g[i][0]) || 1);
+  return -99;
+}
+function drawGuide(v, a, p) {
+  let x = ball.x, y = ball.y, vx = 26 * p / 100 * Math.cos(a), vy = 26 * p / 100 * Math.sin(a);
+  ctx.fillStyle = "rgba(255,214,102,.75)";
+  for (let i = 1; i <= 360; i++) {
+    vy -= 9.81 / 60; vx /= 1 + 0.15 / 60; vy /= 1 + 0.15 / 60;
+    x += vx / 60; y += vy / 60;
+    if (i > 3 && y < groundAt(x) + course.ball_radius) break;
+    if (i % 4 === 0) { ctx.beginPath(); ctx.arc(v.toX(x), v.toY(y), 2.2, 0, 6.2832); ctx.fill(); }
+  }
 }
 
 // ---------- aiming ----------
@@ -1988,10 +2021,13 @@ function setStatus(t, isBusy = false) { $("status").textContent = t; $("status")
 function hud() {
   if (!course) return;
   const date = new Date(course.day * 86400e3).toLocaleDateString([], { month: "short", day: "numeric", timeZone: "UTC" });
-  $("hud").innerHTML = `Hole of <b>${date}</b> · par <b>${course.par}</b>` + (round ? ` · strokes <b>${round.strokes}</b>` : "");
+  const lv = course.level ?? 1;
+  $("hud").innerHTML = `Hole of <b>${date}</b> · <b>${LEVELS[lv]}</b> · par <b>${course.par}</b>` + (round ? ` · strokes <b>${round.strokes}</b>` : "") +
+    (course.wind ? ` · wind <b>${course.wind < 0 ? "←" : "→"} ${Math.abs(course.wind).toFixed(1)}</b>` : "");
 }
 
 function renderBoard(lb) {
+  $("lb-label").textContent = `Today's leaderboard · ${LEVELS[lb.level ?? 1]}`;
   $("lb-stats").textContent = `${lb.played} played · ${lb.holed} holed${lb.aces ? ` · ${lb.aces} ace${lb.aces > 1 ? "s" : ""}` : ""}`;
   $("board").innerHTML = lb.top.length ? lb.top.map((e) =>
     `<li><a href="/golf/${e.id}">${e.name}</a> <span>· ${e.strokes} stroke${e.strokes > 1 ? "s" : ""}${round && e.id === round.id ? " · you" : ""}</span></li>`).join("")
@@ -2040,10 +2076,10 @@ async function start() {
   $("start").disabled = true;
   setStatus("Creating your round on-chain…", true);
   try {
-    round = await call("POST", "/api/golf/round", $("name").value);
-    key = round.key; store(KEY(round.id), key); store(MINE(round.day), String(round.id));
+    round = await call("POST", "/api/golf/round", $("name").value + "\n" + level);
+    key = round.key; store(KEY(round.id), key); store(MINE(round.day, round.level), String(round.id));
     history.replaceState(null, "", "/golf/" + round.id);
-    window.ptcTrack?.("golf_start");
+    window.ptcTrack?.("golf_start", { level: LEVELS[round.level ?? 1] });
     after();
   } catch (e) { setStatus("The canister refused: " + e.message); }
   $("start").disabled = false;
@@ -2086,8 +2122,9 @@ async function shoot() {
   busy = false; $("shoot").disabled = false;
   if (round) after();
   if (finishedNow) {
-    window.ptcTrack?.("golf_finish", { strokes: round.strokes });
-    if (round.status === "holed") window.ptcTrack?.("golf_holed", { strokes: round.strokes });
+    const lv = LEVELS[round.level ?? 1];
+    window.ptcTrack?.("golf_finish", { strokes: round.strokes, level: lv });
+    if (round.status === "holed") window.ptcTrack?.("golf_holed", { strokes: round.strokes, level: lv });
   }
   if (finishedNow && autoPost()) $("post-feed")?.click();
 }
@@ -2098,7 +2135,7 @@ for (const [id, to] of [["share-x", "x"], ["share-wa", "wa"]])
 
 // Your round for today is remembered in this browser; this starts a fresh one.
 $("again").onclick = $("restart").onclick = () => {
-  try { localStorage.removeItem(MINE(course.day)); } catch (e) {}
+  try { localStorage.removeItem(MINE(course.day, course.level ?? 1)); } catch (e) {}
   location.href = "/golf";
 };
 $("start").onclick = start;
@@ -2172,13 +2209,15 @@ async function load() {
   const m = location.pathname.match(/^\/golf\/(\d+)$/);
   try {
     // Both at once: each is an update call, a second or two on mainnet.
-    const [t, r] = await Promise.all([call("GET", "/api/golf/today"), m ? call("GET", "/api/golf/round/" + m[1]) : null]);
+    const r = m ? await call("GET", "/api/golf/round/" + m[1]) : null;
+    if (r) level = r.round.level ?? 1; // a round's leaderboard is its level's
+    const t = await call("GET", "/api/golf/today?level=" + level);
     renderBoard(t.leaderboard);
     if (!m) {
-      course = t.course; ball = { ...course.tee }; cam.x = ball.x; hud(); draw();
-      const mine = read(MINE(course.day));
+      const mine = read(MINE(t.course.day));
       if (mine) { location.replace("/golf/" + mine + "#resume"); return; }
-      $("setup").hidden = false; setStatus("Today's hole is ready. Press Tee off.");
+      showLevel(t);
+      $("setup").hidden = false; setStatus("Today's hole is ready. Pick a level, then press Tee off.");
       return;
     }
     course = r.course; round = r.round; key = read(KEY(round.id));
@@ -2193,6 +2232,24 @@ async function load() {
     else history.replaceState(null, "", location.pathname);
   } catch (e) { setStatus("Could not reach the canister: " + e.message); }
 }
+// The level picker: the same hole, a different cup and wind, its own leaderboard.
+function showLevel(t) {
+  course = t.course; ball = { ...course.tee }; cam.x = ball.x; trail = [];
+  document.querySelectorAll("#levels button").forEach((b) => b.classList.toggle("on", +b.dataset.level === level));
+  hud(); draw();
+}
+document.querySelectorAll("#levels button").forEach((b) => b.onclick = async () => {
+  if (round) return;
+  level = +b.dataset.level;
+  try { localStorage.setItem("ptc-golf-level", String(level)); } catch (e) {}
+  document.querySelectorAll("#levels button").forEach((x) => x.classList.toggle("on", x === b));
+  try {
+    const mine = read(MINE(course.day));
+    if (mine) { location.href = "/golf/" + mine + "#resume"; return; }
+    const t = await call("GET", "/api/golf/today?level=" + level);
+    showLevel(t); renderBoard(t.leaderboard);
+  } catch (e) { setStatus("Could not reach the canister: " + e.message); }
+});
 window.addEventListener("resize", draw);
 load();
 </script>

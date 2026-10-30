@@ -28,6 +28,11 @@ application subnet and agreed on by consensus.
 - **Stockfish without threads.** `SF_NO_THREADS` runs the search synchronously
   in the calling message (about 50 guarded lines in `src/sf`). A depth-18 move
   is ~12B instructions, inside the 40B per-message limit.
+- **Three golf levels on the same daily hole**, each with its own leaderboard:
+  Easy has a wider cup that also holds faster balls and an aim guide, Normal is
+  the classic hole, Pro has a tight cup and a daily headwind on the ball in
+  flight. Normal is unchanged, so every older round still recomputes exactly.
+  `native/golf_test.cpp <level>` checks that every hole can be won.
 - **Five chess levels.** Strong and Full are Stockfish at full strength.
   Club uses Stockfish's Skill Level; Easy and Beginner add a blunder chance:
   15% or 50% of their moves are a random legal move, picked by a hash of the
@@ -116,8 +121,8 @@ icpp build-native && icpp run-native  # the engine natively, timed
 | `POST /api/game` | body `<depth 1-20>\n<w\|b>[\n<skill 0-20>\n<blunder % 0-90>]`: a new game and its key |
 | `GET /api/game/<id>` | a game, with a receipt for every engine move |
 | `POST /api/game/<id>/move` | body `<key>\n<uci move>`: your move and the reply |
-| `GET /api/golf/today` | today's hole and leaderboard |
-| `POST /api/golf/round` | body `<name>`: a new round and its key |
+| `GET /api/golf/today?level=<0-2>` | today's hole at a level, and that level's leaderboard |
+| `POST /api/golf/round` | body `<name>[\n<level 0-2>]`: a new round and its key |
 | `POST /api/golf/round/<id>/shot` | body `<key>\n<angle>\n<power>`: a shot and its path |
 | `GET /api/golf/round/<id>[/shot/<n>]` | a round; or shot n simulated again, with `matches` |
 | `/api/minigolf/...` | the same shape as golf |
