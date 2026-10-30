@@ -409,6 +409,13 @@ static const char HOME_HTML[] = R"HTML(<!doctype html>
   .stat .d { color: var(--muted); font-size: 12.5px; }
   .stat.live .k::before { content: ""; display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: var(--accent); margin-right: 6px; vertical-align: 1px; }
 
+  .feedstrip { padding: 6px 16px; }
+  .feedstrip a.item { display: flex; gap: 12px; align-items: baseline; padding: 10px 0; border-top: 1px solid var(--line); color: var(--text); text-decoration: none; }
+  .feedstrip a.item:first-child { border-top: 0; }
+  .feedstrip a.item:hover b { color: var(--accent); }
+  .feedstrip .when { margin-left: auto; color: var(--muted); font-size: 12.5px; white-space: nowrap; }
+  .feedstrip .fs-empty { color: var(--muted); padding: 10px 0; font-size: 14px; }
+  h2.sec a { color: var(--accent); text-transform: none; letter-spacing: 0; }
   h2.sec { font-size: 13px; color: var(--muted); text-transform: uppercase; letter-spacing: .08em; margin: 40px 0 12px; font-weight: 600; }
   .games { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
   @media (max-width: 1000px) { .games { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
@@ -476,7 +483,7 @@ static const char HOME_HTML[] = R"HTML(<!doctype html>
 <main>
   <nav class="top">
     <a class="brand" href="/">Play the <span>Chain</span></a>
-    <a href="/chess">♟ Chess</a><a href="/golf">⛳ Golf</a><a href="/games">Dashboard</a><a href="#fuel">⛽ Fuel</a>
+    <a href="/chess">♟ Chess</a><a href="/golf">⛳ Golf</a><a href="/feed">📣 Feed</a><a href="/games">Dashboard</a><a href="#fuel">⛽ Fuel</a>
   </nav>
 
   <section class="hero">
@@ -545,6 +552,9 @@ static const char HOME_HTML[] = R"HTML(<!doctype html>
       </div>
     </a>
   </div>
+
+  <h2 class="sec">📣 From the feed · <a href="/feed">see all</a></h2>
+  <section class="panel feedstrip" id="feedstrip"><div class="fs-empty">Loading what players posted…</div></section>
 
   <h2 class="sec">How it works</h2>
   <div class="how">
@@ -660,6 +670,25 @@ async function refuel() {
 }
 $("refuel").onclick = refuel;
 
+// The latest posts from /feed, newest first.
+async function loadFeedStrip() {
+  const ICON = { golf: "⛳", chess: "♟", fuel: "⛽" };
+  try {
+    const d = await call("GET", "/api/feed");
+    const box = $("feedstrip");
+    box.innerHTML = d.posts.length ? "" : `<div class="fs-empty">Nobody has posted yet. Finish a round or a game and press <b>Post to feed</b>.</div>`;
+    for (const p of d.posts.slice(0, 5)) {
+      const a = document.createElement("a");
+      a.className = "item"; a.href = p.kind === "fuel" ? "/feed" : p.url;
+      const t = document.createElement("b"); t.textContent = `${ICON[p.kind] || "•"} ${p.title}`;
+      const w = document.createElement("span"); w.className = "when";
+      w.textContent = `${p.react.reduce((x, y) => x + y, 0) ? "🔥 " + p.react.reduce((x, y) => x + y, 0) + " · " : ""}${new Date(p.time_ns / 1e6).toLocaleDateString([], { month: "short", day: "numeric" })}`;
+      a.append(t, w); box.append(a);
+    }
+  } catch (e) { $("feedstrip").innerHTML = `<div class="fs-empty">The feed is resting. <a href="/feed">Open it</a>.</div>`; }
+}
+loadFeedStrip();
+
 document.querySelectorAll("[data-copy]").forEach((b) => b.onclick = async () => {
   try { await navigator.clipboard.writeText($(b.dataset.copy).textContent); b.textContent = "Copied ✓"; }
   catch (e) { b.textContent = "Select it"; }
@@ -734,6 +763,7 @@ static const char UI_HTML[] = R"HTML(<!doctype html>
   button.primary { background: var(--accent); color: #062a20; border-color: var(--accent); font-weight: 600; }
   button:disabled { opacity: .5; cursor: default; }
   .share { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-top: 12px; }
+  #post-name { font: inherit; color: var(--text); background: #0f1219; border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; width: 190px; }
   .share a.btn { color: var(--text); background: #1c2230; border: 1px solid var(--line); border-radius: 8px;
     padding: 8px 12px; text-decoration: none; font-size: 14px; }
   .share a.btn:hover { border-color: var(--accent); }
@@ -834,6 +864,7 @@ static const char UI_HTML[] = R"HTML(<!doctype html>
     <h1><a href="/" style="color:inherit;text-decoration:none">Play the <span>Chain</span></a></h1>
     <div class="tag">Stockfish, compiled from C++ with icpp-pro, running inside an Internet Computer canister.</div>
     <a class="all" href="/golf">⛳ New: Chain Golf</a>
+    <a href="/feed" style="font-size:14px">📣 Feed</a>
     <a href="/games" style="font-size:14px">All games &amp; cycles →</a>
   </header>
   <p class="about"><b>What is Stockfish?</b> The strongest open-source chess engine in the world, and for years
@@ -868,6 +899,10 @@ static const char UI_HTML[] = R"HTML(<!doctype html>
           <a id="share-x" class="btn" target="_blank" rel="noopener">Post on X</a>
           <a id="share-wa" class="btn" target="_blank" rel="noopener">WhatsApp</a>
           <span class="hint">Anyone with the link can replay every move from the canister.</span>
+        </div>
+        <div id="feed-row" class="share" hidden>
+          <input id="post-name" type="text" maxlength="16" placeholder="Your name (optional)" aria-label="Your name for the feed">
+          <button id="post-feed">📣 Post to feed</button>
         </div>
       </div>
 
@@ -1210,6 +1245,18 @@ function updateShare() {
   $("share-wa").href = "https://wa.me/?text=" + encodeURIComponent(text + " " + url);
   // The native share sheet (phones, Safari) where there is one; otherwise copying is the main action.
   $("share-btn").hidden = !navigator.share;
+  // Your own game, once it's over or has some moves in it, can go to the feed.
+  $("feed-row").hidden = !(key && (game.status !== "playing" || plies() >= 10));
+}
+
+// Posts this game to the feed; the canister writes the headline.
+async function postFeed() {
+  const b = $("post-feed");
+  b.disabled = true; b.textContent = "Posting…";
+  try {
+    await call("POST", "/api/feed", `chess\n${game.id}\n${key}\n${$("post-name").value}`);
+    $("feed-row").innerHTML = `<a href="/feed">📣 Posted · see the feed ▸</a>`;
+  } catch (e) { b.disabled = false; b.textContent = "📣 Post to feed"; setStatus("Could not post: " + e.message); }
 }
 
 async function copyLink() {
@@ -1301,6 +1348,7 @@ async function load() {
 $("start").onclick = start;
 $("refuel").onclick = refuel;
 $("share-btn").onclick = share;
+$("post-feed").onclick = postFeed;
 $("copy-btn").onclick = copyLink;
 load();
 </script>
@@ -1667,7 +1715,7 @@ static const char GOLF_HTML[] = R"HTML(<!doctype html>
 <main>
   <header>
     <h1>Chain <span>Golf</span></h1>
-    <nav><a href="/">Home</a><a href="/chess">♟ Chess</a><a href="/games">All games</a><a href="/#fuel">⛽ Fuel</a></nav>
+    <nav><a href="/">Home</a><a href="/chess">♟ Chess</a><a href="/feed">📣 Feed</a><a href="/games">All games</a><a href="/#fuel">⛽ Fuel</a></nav>
   </header>
   <p class="sub">One hole a day. Every shot is simulated by <b>Box2D</b>, the C++ physics engine behind Angry Birds, running inside
     an Internet Computer canister on 13 computers. Your browser only draws what the chain computed, so nobody can fake a score.</p>
@@ -1701,6 +1749,7 @@ static const char GOLF_HTML[] = R"HTML(<!doctype html>
           <button id="copy-btn">Copy link</button>
           <a id="share-x" target="_blank" rel="noopener">Post on X</a>
           <a id="share-wa" target="_blank" rel="noopener">WhatsApp</a>
+          <button id="post-feed" hidden>📣 Post to feed</button>
           <button id="again" class="primary" hidden>Play again</button>
         </div>
         <dl class="kv" id="receipt" hidden></dl>
@@ -1876,6 +1925,7 @@ function after() {
   const done = round.status !== "playing";
   $("share").hidden = !(round.shots.length);
   $("again").hidden = !(key && done);
+  $("post-feed").hidden = !(key && done);
   updateShare();
   renderShots(); hud(); draw();
   if (done) refreshBoard();
@@ -1965,6 +2015,16 @@ async function replay() {
   if (ok) setStatus(statusText().replace(/\.?$/, ".") + " Replayed on-chain: every shot landed exactly where it did the first time.");
 }
 $("verify").onclick = replay;
+
+// Posts this finished round to the feed; the canister writes the headline.
+$("post-feed").onclick = async () => {
+  const b = $("post-feed");
+  b.disabled = true; b.textContent = "Posting…";
+  try {
+    await call("POST", "/api/feed", `golf\n${round.id}\n${key}\n`);
+    b.outerHTML = `<a href="/feed">📣 Posted · see the feed ▸</a>`;
+  } catch (e) { b.disabled = false; b.textContent = "📣 Post to feed"; setStatus("Could not post: " + e.message); }
+};
 
 // ---------- share ----------
 const shareUrl = () => location.origin + "/golf/" + round.id;
@@ -2519,6 +2579,159 @@ async function load() {
 window.addEventListener("resize", resize);
 syncAim();
 load();
+</script>
+</body>
+</html>
+)HTML";
+
+static const char FEED_HTML[] = R"HTML(<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Feed · Play the Chain</title>
+<meta name="description" content="Results players posted from Play the Chain: every one computed by 13 computers inside an Internet Computer canister.">
+<style>
+  :root {
+    --bg: #0b0d12; --panel: #141821; --line: #232938; --text: #e8ecf3; --muted: #8b93a7;
+    --accent: #5ef2c8; --accent-dim: rgba(94,242,200,.14);
+  }
+  * { box-sizing: border-box; }
+  [hidden] { display: none !important; }
+  body { margin: 0; background: var(--bg); color: var(--text);
+    font: 15px/1.45 ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif; }
+  a { color: var(--accent); }
+  main { max-width: 720px; margin: 0 auto; padding: 22px 16px 48px; }
+  header { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; margin-bottom: 6px; }
+  h1 { margin: 0; font-size: 26px; letter-spacing: -.02em; }
+  h1 span { color: var(--accent); }
+  header nav { margin-left: auto; font-size: 14px; display: flex; gap: 14px; flex-wrap: wrap; }
+  .sub { color: var(--muted); font-size: 14px; margin: 0 0 18px; }
+  .cta { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 18px; }
+  .cta a { text-decoration: none; padding: 9px 14px; border-radius: 10px; border: 1px solid var(--line); color: var(--text); background: #1c2230; }
+  .cta a.primary { background: var(--accent); color: #062018; border-color: var(--accent); font-weight: 600; }
+
+  .post { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 14px 16px; margin-bottom: 10px;
+    display: grid; grid-template-columns: 40px minmax(0, 1fr); gap: 4px 12px; }
+  .post.new { animation: arrive .6s ease both; }
+  @keyframes arrive { from { opacity: 0; transform: translateY(-8px); } }
+  .icon { grid-row: span 3; width: 40px; height: 40px; border-radius: 12px; display: grid; place-items: center; font-size: 20px; background: var(--accent-dim); }
+  .title { font-weight: 650; font-size: 16px; overflow-wrap: anywhere; }
+  .meta { color: var(--muted); font-size: 13px; }
+  .actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: 6px; }
+  .actions a { font-size: 13.5px; }
+  .react { font: inherit; font-size: 14px; color: var(--text); background: #1c2230; border: 1px solid var(--line); border-radius: 999px;
+    padding: 3px 10px; cursor: pointer; font-variant-numeric: tabular-nums; }
+  .react:hover { border-color: var(--accent); }
+  .react.on { border-color: var(--accent); background: var(--accent-dim); }
+  .spacer { flex: 1; }
+  .empty { color: var(--muted); text-align: center; padding: 40px 0; }
+  button.more { font: inherit; color: var(--text); background: #1c2230; border: 1px solid var(--line); border-radius: 10px;
+    padding: 9px 14px; cursor: pointer; width: 100%; }
+  .err { color: #ffb4a8; }
+</style>
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="Play the Chain">
+<meta property="og:title" content="__OG_TITLE__">
+<meta property="og:description" content="__OG_DESC__">
+<meta property="og:url" content="__OG_URL__">
+<meta property="og:image" content="__OG_IMAGE__">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="__OG_TITLE__">
+<meta name="twitter:description" content="__OG_DESC__">
+<meta name="twitter:image" content="__OG_IMAGE__">
+<link rel="stylesheet" href="/fabric.css?v=718b5ac8e8">
+<script type="module" src="/fabric.js?v=718b5ac8e8"></script>
+</head>
+<body>
+<main>
+  <header>
+    <h1>The <span>feed</span></h1>
+    <nav><a href="/">Home</a><a href="/chess">♟ Chess</a><a href="/golf">⛳ Golf</a><a href="/games">All games</a></nav>
+  </header>
+  <p class="sub">Results players posted, straight from the chain. Every one was computed by 13 computers, so nobody can fake a score.
+    Finish a round or a game, then press <b>Post to feed</b>.</p>
+  <div class="cta"><a class="primary" href="/golf">⛳ Play today's hole</a><a href="/chess">♟ Play Stockfish</a></div>
+  <div id="posts"></div>
+  <p id="status" class="empty">Loading the feed from the canister…</p>
+  <button id="more" class="more" hidden>Older posts</button>
+</main>
+<script>
+const $ = (id) => document.getElementById(id);
+async function call(method, path, body) {
+  const res = await fetch(path, { method, body });
+  const data = await res.json().catch(() => ({ error: "HTTP " + res.status }));
+  if (!res.ok) throw new Error(data.error || "HTTP " + res.status);
+  return data;
+}
+const ICON = { golf: "⛳", chess: "♟", fuel: "⛽" };
+const EMOJI = ["🔥", "👏", "😮"];
+const ago = (ns) => {
+  const s = Math.max(0, (Date.now() - ns / 1e6) / 1000);
+  return s < 60 ? "just now" : s < 3600 ? Math.floor(s / 60) + " min ago" : s < 86400 ? Math.floor(s / 3600) + " h ago"
+    : new Date(ns / 1e6).toLocaleDateString([], { month: "short", day: "numeric" });
+};
+// Which reactions this browser already gave, so one tap each.
+const mine = (id) => { try { return JSON.parse(localStorage.getItem("feed_react_" + id) || "[]"); } catch (e) { return []; } };
+const remember = (id, list) => { try { localStorage.setItem("feed_react_" + id, JSON.stringify(list)); } catch (e) {} };
+
+function card(p, fresh) {
+  const el = document.createElement("article");
+  el.className = "post" + (fresh ? " new" : "");
+  el.dataset.id = p.id;
+  const icon = document.createElement("div"); icon.className = "icon"; icon.textContent = ICON[p.kind] || "•";
+  const title = document.createElement("div"); title.className = "title"; title.textContent = p.title;
+  const meta = document.createElement("div"); meta.className = "meta"; meta.textContent = `${p.sub} · ${ago(p.time_ns)}`;
+  const actions = document.createElement("div"); actions.className = "actions";
+  const given = mine(p.id);
+  p.react.forEach((n, k) => {
+    const b = document.createElement("button");
+    b.className = "react" + (given.includes(k) ? " on" : "");
+    b.textContent = `${EMOJI[k]} ${n}`;
+    b.onclick = async () => {
+      if (mine(p.id).includes(k)) return;
+      remember(p.id, [...mine(p.id), k]);
+      b.classList.add("on"); b.textContent = `${EMOJI[k]} ${n + 1}`;
+      try { const r = await call("POST", `/api/feed/${p.id}/react`, String(k)); b.textContent = `${EMOJI[k]} ${r.react[k]}`; } catch (e) {}
+    };
+    actions.append(b);
+  });
+  const spacer = document.createElement("span"); spacer.className = "spacer"; actions.append(spacer);
+  if (p.kind !== "fuel") {
+    const replay = document.createElement("a"); replay.href = p.url; replay.textContent = "Replay ▸"; actions.append(replay);
+  }
+  const share = document.createElement("a");
+  share.target = "_blank"; share.rel = "noopener"; share.textContent = "Share on X";
+  share.href = "https://x.com/intent/post?text=" + encodeURIComponent(p.title + " · verified on-chain") + "&url=" + encodeURIComponent(location.origin + p.url);
+  actions.append(share);
+  el.append(icon, title, meta, actions);
+  return el;
+}
+
+let next = 0, newest = 0;
+async function load(before) {
+  const d = await call("GET", "/api/feed" + (before ? "?before=" + before : ""));
+  for (const p of d.posts) $("posts").append(card(p, false));
+  if (!before && d.posts.length) newest = d.posts[0].id;
+  next = d.next;
+  $("more").hidden = !next;
+  $("status").hidden = !!$("posts").children.length;
+  $("status").textContent = "Nobody has posted yet. Finish a round or a game and be the first.";
+}
+// New posts slide in at the top.
+async function poll() {
+  try {
+    const d = await call("GET", "/api/feed");
+    const fresh = d.posts.filter((p) => p.id > newest).reverse();
+    for (const p of fresh) { $("posts").prepend(card(p, true)); newest = p.id; }
+    if (fresh.length) $("status").hidden = true;
+  } catch (e) {}
+}
+$("more").onclick = () => load(next);
+load().catch((e) => { $("status").innerHTML = `<span class="err">Could not reach the canister: ${e.message}</span>`; });
+setInterval(() => { if (!document.hidden) poll(); }, 30000);
 </script>
 </body>
 </html>

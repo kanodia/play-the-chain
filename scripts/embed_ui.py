@@ -6,7 +6,7 @@ Run from the project root after editing a page:  python3 -I scripts/embed_ui.py
 import pathlib
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
-PAGES = {"HOME_HTML": "home.html", "UI_HTML": "index.html", "GAMES_HTML": "games.html", "GOLF_HTML": "golf.html", "MINIGOLF_HTML": "minigolf.html"}
+PAGES = {"HOME_HTML": "home.html", "UI_HTML": "index.html", "GAMES_HTML": "games.html", "GOLF_HTML": "golf.html", "MINIGOLF_HTML": "minigolf.html", "FEED_HTML": "feed.html"}
 
 import hashlib
 

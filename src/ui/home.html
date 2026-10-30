@@ -37,6 +37,13 @@
   .stat .d { color: var(--muted); font-size: 12.5px; }
   .stat.live .k::before { content: ""; display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: var(--accent); margin-right: 6px; vertical-align: 1px; }
 
+  .feedstrip { padding: 6px 16px; }
+  .feedstrip a.item { display: flex; gap: 12px; align-items: baseline; padding: 10px 0; border-top: 1px solid var(--line); color: var(--text); text-decoration: none; }
+  .feedstrip a.item:first-child { border-top: 0; }
+  .feedstrip a.item:hover b { color: var(--accent); }
+  .feedstrip .when { margin-left: auto; color: var(--muted); font-size: 12.5px; white-space: nowrap; }
+  .feedstrip .fs-empty { color: var(--muted); padding: 10px 0; font-size: 14px; }
+  h2.sec a { color: var(--accent); text-transform: none; letter-spacing: 0; }
   h2.sec { font-size: 13px; color: var(--muted); text-transform: uppercase; letter-spacing: .08em; margin: 40px 0 12px; font-weight: 600; }
   .games { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
   @media (max-width: 1000px) { .games { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
@@ -92,7 +99,7 @@
 <main>
   <nav class="top">
     <a class="brand" href="/">Play the <span>Chain</span></a>
-    <a href="/chess">♟ Chess</a><a href="/golf">⛳ Golf</a><a href="/games">Dashboard</a><a href="#fuel">⛽ Fuel</a>
+    <a href="/chess">♟ Chess</a><a href="/golf">⛳ Golf</a><a href="/feed">📣 Feed</a><a href="/games">Dashboard</a><a href="#fuel">⛽ Fuel</a>
   </nav>
 
   <section class="hero">
@@ -161,6 +168,9 @@
       </div>
     </a>
   </div>
+
+  <h2 class="sec">📣 From the feed · <a href="/feed">see all</a></h2>
+  <section class="panel feedstrip" id="feedstrip"><div class="fs-empty">Loading what players posted…</div></section>
 
   <h2 class="sec">How it works</h2>
   <div class="how">
@@ -275,6 +285,25 @@ async function refuel() {
   btn.disabled = false;
 }
 $("refuel").onclick = refuel;
+
+// The latest posts from /feed, newest first.
+async function loadFeedStrip() {
+  const ICON = { golf: "⛳", chess: "♟", fuel: "⛽" };
+  try {
+    const d = await call("GET", "/api/feed");
+    const box = $("feedstrip");
+    box.innerHTML = d.posts.length ? "" : `<div class="fs-empty">Nobody has posted yet. Finish a round or a game and press <b>Post to feed</b>.</div>`;
+    for (const p of d.posts.slice(0, 5)) {
+      const a = document.createElement("a");
+      a.className = "item"; a.href = p.kind === "fuel" ? "/feed" : p.url;
+      const t = document.createElement("b"); t.textContent = `${ICON[p.kind] || "•"} ${p.title}`;
+      const w = document.createElement("span"); w.className = "when";
+      w.textContent = `${p.react.reduce((x, y) => x + y, 0) ? "🔥 " + p.react.reduce((x, y) => x + y, 0) + " · " : ""}${new Date(p.time_ns / 1e6).toLocaleDateString([], { month: "short", day: "numeric" })}`;
+      a.append(t, w); box.append(a);
+    }
+  } catch (e) { $("feedstrip").innerHTML = `<div class="fs-empty">The feed is resting. <a href="/feed">Open it</a>.</div>`; }
+}
+loadFeedStrip();
 
 document.querySelectorAll("[data-copy]").forEach((b) => b.onclick = async () => {
   try { await navigator.clipboard.writeText($(b.dataset.copy).textContent); b.textContent = "Copied ✓"; }

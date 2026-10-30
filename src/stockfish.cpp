@@ -10,6 +10,7 @@
 #include <string>
 
 #include "engine.h"
+#include "feed.h"
 #include "fuel.h"
 #include "games.h"
 #include "golf.h"
@@ -663,6 +664,164 @@ static IC_HttpResponse api_test_mg_best(const std::string &body) {
 }
 #endif
 
+// ---------- the feed ----------
+// Results players chose to post, and refuels. Every headline is written here,
+// from the canister's own record of the result.
+
+// Days since 1970-01-01 -> "Oct 30" (Howard Hinnant's civil_from_days).
+static std::string day_text(uint32_t days) {
+  int64_t z = int64_t(days) + 719468, era = (z >= 0 ? z : z - 146096) / 146097;
+  int64_t doe = z - era * 146097, yoe = (doe - doe / 1460 + doe / 36524 - doe / 146096) / 365;
+  int64_t doy = doe - (365 * yoe + yoe / 4 - yoe / 100), mp = (5 * doy + 2) / 153;
+  int64_t d = doy - (153 * mp + 2) / 5 + 1, m = mp < 10 ? mp + 3 : mp - 9;
+  static const char *MONTHS[] = {"Jan", "Feb", "Mar", "Apr", "May", "Jun",
+                                 "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"};
+  return std::string(MONTHS[m - 1]) + " " + std::to_string(d);
+}
+
+static std::string short_number(__uint128_t n) {
+  char buf[32];
+  double v = double(n);
+  if (v >= 1e12) std::snprintf(buf, sizeof buf, "%.2fT", v / 1e12);
+  else if (v >= 1e9) std::snprintf(buf, sizeof buf, "%.1fB", v / 1e9);
+  else if (v >= 1e6) std::snprintf(buf, sizeof buf, "%.1fM", v / 1e6);
+  else std::snprintf(buf, sizeof buf, "%.0f", v);
+  return buf;
+}
+
+// The headline of a post, from the record it points at; false if that record
+// is gone.
+static bool feed_story(const FeedPost &p, std::string &title, std::string &sub, std::string &url) {
+  std::string who = p.name.empty() || p.name == "anon" ? "Someone" : p.name;
+  if (p.kind == "golf") {
+    GolfRound r;
+    if (!golf_round_load(p.ref, r)) return false;
+    GolfCourse c = golf_round_course(r);
+    int n = r.strokes();
+    std::string hole = r.day == golf_today() ? "today's hole" : "the " + day_text(r.day) + " hole";
+    title = r.holed() ? (n == 1 ? who + " made a hole-in-one \xE2\x9B\xB3"
+                                : who + " holed " + hole + " in " + std::to_string(n) +
+                                      (n <= c.par ? " \xE2\x9B\xB3" : ""))
+                      : who + " took " + std::to_string(n) + " strokes on " + hole + " and missed the cup";
+    sub = "Chain Golf \xC2\xB7 " + std::to_string(r.shots.size()) +
+          (r.shots.size() == 1 ? " shot" : " shots") + ", each simulated by Box2D on 13 nodes";
+    url = "/golf/" + std::to_string(p.ref);
+    return true;
+  }
+  if (p.kind == "chess") {
+    Game g;
+    if (!game_load(p.ref, g)) return false;
+    GameState st = engine_game_state(g.moves());
+    size_t moves = (g.plies.size() + 1) / 2;
+    uint64_t nodes{0};
+    for (const Ply &ply : g.plies) nodes += ply.nodes;
+    std::string m = std::to_string(moves) + (moves == 1 ? " move" : " moves");
+    if (st.status == GameStatus::Checkmate && !g.plies.empty())
+      title = g.plies.back().by_engine ? "Stockfish beat " + who + " in " + m
+                                       : who + " beat Stockfish! \xF0\x9F\xA4\xAF";
+    else if (st.status != GameStatus::Playing)
+      title = who + " drew with Stockfish in " + m;
+    else
+      title = who + " has lasted " + m + " against Stockfish";
+    sub = "Depth " + std::to_string(g.depth) + " \xC2\xB7 " + who + " played " +
+          (g.human == 'w' ? "white" : "black") + " \xC2\xB7 " + short_number(nodes) +
+          " positions searched on-chain";
+    url = "/game/" + std::to_string(p.ref);
+    return true;
+  }
+  if (p.kind == "fuel") {
+    std::vector<FuelEntry> log = fuel_log();
+    if (p.ref == 0 || p.ref > log.size()) return false;
+    const FuelEntry &e = log[p.ref - 1];
+    // What was sent: the converted ICP, the share and the ledger fees.
+    uint64_t sent = e.e8s + e.dev_e8s + (e.dev_e8s ? 20'000 : 10'000);
+    char icp[32];
+    std::snprintf(icp, sizeof icp, "%.4g", double(sent) / 1e8);
+    title = who + " refueled the chain: " + icp + " ICP \xE2\x86\x92 " + short_number(e.cycles) +
+            " cycles \xE2\x9B\xBD";
+    sub = "Thank you! It keeps every game free for everyone.";
+    url = "/#fuel";
+    return true;
+  }
+  return false;
+}
+
+static std::string feed_item_json(const FeedPost &p) {
+  std::string title, sub, url;
+  if (!feed_story(p, title, sub, url)) return "";
+  return "{\"id\":" + std::to_string(p.id) + ",\"kind\":\"" + p.kind + "\",\"ref\":" +
+         std::to_string(p.ref) + ",\"time_ns\":" + std::to_string(p.time_ns) + ",\"name\":\"" +
+         p.name + "\",\"title\":\"" + title + "\",\"sub\":\"" + sub + "\",\"url\":\"" + url +
+         "\",\"react\":[" + std::to_string(p.react[0]) + "," + std::to_string(p.react[1]) + "," +
+         std::to_string(p.react[2]) + "]}";
+}
+
+// GET /api/feed?before=<id>: the 30 newest posts before that id.
+static IC_HttpResponse api_feed(const std::string &url) {
+  uint64_t before = feed_count() + 1;
+  size_t q = url.find("before=");
+  if (q != std::string::npos) {
+    uint64_t b = std::strtoull(url.c_str() + q + 7, nullptr, 10);
+    if (b && b < before) before = b;
+  }
+  std::string items;
+  uint64_t id = before;
+  for (int n = 0; id > 1 && n < 30;) {
+    FeedPost p;
+    if (!feed_load(--id, p)) continue;
+    std::string item = feed_item_json(p);
+    if (item.empty()) continue;
+    items += (items.empty() ? "" : ",") + item;
+    ++n;
+  }
+  return json("{\"total\":" + std::to_string(feed_count()) + ",\"next\":" +
+              std::to_string(id > 1 ? id : 0) + ",\"posts\":[" + items + "]}");
+}
+
+// POST /api/feed, body "<golf|chess>\n<id>\n<key>\n<name>": posts your own
+// result. Only the key's holder can, once per result.
+static IC_HttpResponse api_feed_post(IC_API &ic_api, const std::string &body) {
+  std::istringstream in(body);
+  std::string kind, ref_text, key, name;
+  std::getline(in, kind);
+  std::getline(in, ref_text);
+  std::getline(in, key);
+  std::getline(in, name);
+  uint64_t ref = std::strtoull(ref_text.c_str(), nullptr, 10);
+  if (kind == "golf") {
+    GolfRound r;
+    if (!ref || !golf_round_load(ref, r)) return error(404, "no such round");
+    if (key != r.key) return error(403, "only the player can post this round");
+    if (!r.finished()) return error(409, "finish the round first");
+    if (name.empty()) name = r.name;
+  } else if (kind == "chess") {
+    Game g;
+    if (!ref || !game_load(ref, g)) return error(404, "no such game");
+    if (key != g.key) return error(403, "only the player can post this game");
+    if (engine_game_state(g.moves()).status == GameStatus::Playing && g.plies.size() < 10)
+      return error(409, "play a few more moves first");
+  } else {
+    return error(400, "send golf or chess");
+  }
+  uint64_t id = feed_posted(kind, ref);
+  FeedPost p;
+  if (!id || !feed_load(id, p))
+    p = feed_add(kind, ref, golf_clean_name(name), ic_api.time());
+  return json(feed_item_json(p));
+}
+
+// POST /api/feed/<id>/react, body "0", "1" or "2" (fire, clap, wow).
+static IC_HttpResponse api_feed_react(uint64_t id, const std::string &body) {
+  FeedPost p;
+  if (!feed_load(id, p)) return error(404, "no such post");
+  int k = body.empty() ? -1 : body[0] - '0';
+  if (k < 0 || k >= FEED_REACTIONS) return error(400, "send 0, 1 or 2");
+  if (p.react[k] < FEED_REACTION_CAP) ++p.react[k];
+  feed_save(p);
+  return json("{\"react\":[" + std::to_string(p.react[0]) + "," + std::to_string(p.react[1]) + "," +
+              std::to_string(p.react[2]) + "]}");
+}
+
 // ---------- link previews ----------
 // What a shared link shows on X, WhatsApp and the like. Every page carries
 // the same Open Graph tags (scripts/embed_ui.py); this fills them in.
@@ -744,7 +903,10 @@ static IC_Async http_request_update_async() {
   std::string rest;
 
   if (method == "POST" && path == "/api/fuel") {
+    size_t refuels = fuel_log().size();
     std::string out = co_await refuel(ic_api.get_canister_self());
+    // Every refuel gets a thank-you in the feed.
+    for (size_t n = fuel_log().size(); refuels < n;) feed_add("fuel", ++refuels, "anon", IC_API::time());
     ic_api.to_wire(json(out));
     co_return;
   }
@@ -823,6 +985,17 @@ static IC_Async http_request_update_async() {
     else if (method == "GET" && rest.empty()) response = api_golf_round(id);
     else if (method == "GET" && parse_id(rest, "/shot/", n, tail) && tail.empty())
       response = api_golf_replay(ic_api, id, static_cast<size_t>(n));
+  } else if (method == "GET" && path == "/feed") {
+    response = page(ic_api, FEED_HTML, path,
+                    {"The Play the Chain feed: results straight from the chain",
+                     "Aces, wins and refuels posted by players. Every result was computed by 13 "
+                     "computers, so nobody can fake one.", "home"});
+  } else if (method == "GET" && path == "/api/feed") {
+    response = api_feed(request.url);
+  } else if (method == "POST" && path == "/api/feed") {
+    response = api_feed_post(ic_api, body);
+  } else if (method == "POST" && parse_id(path, "/api/feed/", id, rest) && rest == "/react") {
+    response = api_feed_react(id, body);
   } else if (method == "GET" && path == "/games") {
     response = page(ic_api, GAMES_HTML, path,
                     {"Every game on Play the Chain, and what it cost",
