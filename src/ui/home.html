@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Play the Chain</title>
-<meta name="description" content="Games whose every move runs inside a smart contract: Stockfish chess and Box2D golf, compiled from C++ with icpp-pro and running in one Internet Computer canister.">
+<meta name="description" content="Games whose every move runs inside a smart contract: Stockfish chess, Box2D golf and Bullet 3D mini-golf, 20 levels each, compiled from C++ with icpp-pro and running in one Internet Computer canister.">
 <style>
   :root {
     --bg: #0b0d12; --panel: #141821; --panel2: #10131a; --line: #232938; --text: #e8ecf3; --muted: #8b93a7;
@@ -45,7 +45,7 @@
   .feedstrip .fs-empty { color: var(--muted); padding: 10px 0; font-size: 14px; }
   h2.sec a { color: var(--accent); text-transform: none; letter-spacing: 0; }
   h2.sec { font-size: 13px; color: var(--muted); text-transform: uppercase; letter-spacing: .08em; margin: 40px 0 12px; font-weight: 600; }
-  .games { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
+  .games { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; }
   @media (max-width: 1000px) { .games { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
   @media (max-width: 760px) { .games { grid-template-columns: minmax(0, 1fr); } }
   .card { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; overflow: hidden; display: flex; flex-direction: column; text-decoration: none; color: var(--text); }
@@ -99,7 +99,7 @@
 <main>
   <nav class="top">
     <a class="brand" href="/">Play the <span>Chain</span></a>
-    <a href="/chess">♟ Chess</a><a href="/golf">⛳ Golf</a><a href="/feed">📣 Feed</a><a href="/games">Dashboard</a><a href="#fuel">⛽ Fuel</a>
+    <a href="/chess">♟ Chess</a><a href="/golf">⛳ Golf</a><a href="/minigolf">🏌 3D</a><a href="/feed">📣 Feed</a><a href="/games">Dashboard</a><a href="#fuel">⛽ Fuel</a>
   </nav>
 
   <section class="hero">
@@ -148,7 +148,7 @@
         <div class="go">Play today's hole →</div>
       </div>
     </a>
-    <a class="card" href="/minigolf" hidden><!-- shown at launch -->
+    <a class="card" href="/minigolf">
       <div class="art">
         <svg viewBox="0 0 320 120" width="300" height="112" aria-hidden="true">
           <path d="M40 88 L120 40 L300 40 L220 88 Z" fill="#2f8656" stroke="#8b5e3c" stroke-width="5" stroke-linejoin="round"/>
@@ -291,7 +291,7 @@ $("refuel").onclick = refuel;
 
 // The latest posts from /feed, newest first.
 async function loadFeedStrip() {
-  const ICON = { golf: "⛳", chess: "♟", fuel: "⛽" };
+  const ICON = { golf: "⛳", minigolf: "🏌", chess: "♟", fuel: "⛽" };
   try {
     const d = await call("GET", "/api/feed");
     const box = $("feedstrip");

@@ -28,17 +28,19 @@ application subnet and agreed on by consensus.
 - **Stockfish without threads.** `SF_NO_THREADS` runs the search synchronously
   in the calling message (about 50 guarded lines in `src/sf`). A depth-18 move
   is ~12B instructions, inside the 40B per-message limit.
-- **Three golf levels on the same daily hole**, each with its own leaderboard:
-  Easy has a wider cup that also holds faster balls and an aim guide, Normal is
-  the classic hole, Pro has a tight cup and a daily headwind on the ball in
-  flight. Normal is unchanged, so every older round still recomputes exactly.
-  `native/golf_test.cpp <level>` checks that every hole can be won.
-- **Five chess levels.** Strong and Full are Stockfish at full strength.
-  Club uses Stockfish's Skill Level; Easy and Beginner add a blunder chance:
-  15% or 50% of their moves are a random legal move, picked by a hash of the
-  game and the move number, so every node (and every replay) plays the same.
-- **Box2D and Bullet are vendored unchanged** (Bullet without the modules a
-  canister doesn't need). Golf runs at 60 Hz, mini-golf at 120 Hz with CCD.
+- **20 levels in every game**, unlocked one at a time by winning (beat
+  Stockfish, or hole at or under par); progress is kept in the browser.
+  - Chess: levels 1–9 add random legal moves (60% down to 5%, picked by a
+    hash of the game and move number, so every node agrees), then Stockfish's
+    Skill Level rises, and level 20 is full strength at depth 18. The page
+    sends only the level; the canister picks the settings.
+  - Golf and 3D: level 10 is the classic hole, bit for bit, so every older
+    round still recomputes. Below it the cup is wider and holds faster balls,
+    with an aim guide; above it the cup tightens, a headwind grows (golf), the
+    windmill speeds up and bumpers guard the cup (3D). One daily board ranks
+    the highest level first, then the fewest strokes.
+  - `native/golf_test.cpp <level>` and `native/minigolf_test.cpp <level> <days>`
+    check that a greedy player can hole every day at a level.
 - **Storage:** every game, round and post is a small file in stable memory
   through ic-wasi-polyfill (`/game_<id>.txt`, `/golf_round_<id>.txt`,
   `/feed_<id>.txt`, …), so everything survives upgrades.
@@ -118,11 +120,11 @@ icpp build-native && icpp run-native  # the engine natively, timed
 |---|---|
 | `GET /api/info` | canister, subnet, node count, today's budget, fuel tank |
 | `GET /api/games` | every chess game and its cost |
-| `POST /api/game` | body `<depth 1-20>\n<w\|b>[\n<skill 0-20>\n<blunder % 0-90>]`: a new game and its key |
+| `POST /api/game` | body `L<level 1-20>\n<w\|b>` (or `<depth>\n<w\|b>[\n<skill>\n<blunder %>]`): a new game and its key |
 | `GET /api/game/<id>` | a game, with a receipt for every engine move |
 | `POST /api/game/<id>/move` | body `<key>\n<uci move>`: your move and the reply |
-| `GET /api/golf/today?level=<0-2>` | today's hole at a level, and that level's leaderboard |
-| `POST /api/golf/round` | body `<name>[\n<level 0-2>]`: a new round and its key |
+| `GET /api/golf/today?level=<1-20>` | today's hole at a level, and the day's board |
+| `POST /api/golf/round` | body `<name>[\n<level 1-20>]`: a new round and its key |
 | `POST /api/golf/round/<id>/shot` | body `<key>\n<angle>\n<power>`: a shot and its path |
 | `GET /api/golf/round/<id>[/shot/<n>]` | a round; or shot n simulated again, with `matches` |
 | `/api/minigolf/...` | the same shape as golf |

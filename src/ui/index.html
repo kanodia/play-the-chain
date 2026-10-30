@@ -166,14 +166,7 @@
       <div class="panel">
         <div id="status" class="status">Start a game. The canister will referee it.</div>
         <div id="setup" class="row">
-          <select id="depth" aria-label="Engine strength">
-            <!-- "<depth>:<Stockfish Skill Level>:<% random moves>": the lower levels play weaker moves on purpose -->
-            <option value="1:0:50">🐣 Beginner</option>
-            <option value="1:0:15" selected>🙂 Easy</option>
-            <option value="7:6:0">♟ Club</option>
-            <option value="14:20:0">🔥 Strong · full strength</option>
-            <option value="18:20:0">💀 Full · depth 18</option>
-          </select>
+          <div id="ladder"></div>
           <select id="side" aria-label="Your side">
             <option value="w">I play white</option>
             <option value="b">I play black</option>
@@ -517,7 +510,14 @@ function afterUpdate() {
   if (key && lastStatus === "playing" && game.status !== "playing") {
     const won = game.status === "checkmate" && game.moves.length && game.moves[game.moves.length - 1].by !== "engine";
     window.ptcTrack?.("chess_end", { result: won ? "win" : game.status === "checkmate" ? "loss" : "draw", moves: Math.ceil(plies() / 2) });
-    if (won) window.ptcTrack?.("chess_win");
+    if (won) {
+      window.ptcTrack?.("chess_win", { level: game.level_n });
+      // A win unlocks the next level.
+      if (game.level_n && chessLevels.unlock(game.level_n + 1)) {
+        chessLevels.set(game.level_n + 1); ladder.refresh();
+        setStatus(statusText() + ` 🔓 Level ${game.level_n + 1} unlocked!`);
+      }
+    }
     if (autoPost()) postFeed();
   }
   lastStatus = game.status;
@@ -549,6 +549,14 @@ function updateShare() {
   // Your own game, once it's over or has some moves in it, can go to the feed.
   $("feed-row").hidden = !(key && (game.status !== "playing" || plies() >= 10));
 }
+
+// The 20 levels: random mistakes first, then Stockfish's Skill Level, then
+// full strength. The canister holds the settings; this only describes them.
+const CHESS_LEVELS = (n) => n <= 3 ? "Stockfish blunders a lot" : n <= 6 ? "Stockfish makes plenty of mistakes"
+  : n <= 9 ? "Stockfish makes some mistakes" : n === 10 ? "No random mistakes any more" : n <= 14 ? "Club strength"
+  : n <= 19 ? "Strong: thinks deeper every level" : "Full Stockfish, depth 18: nobody has won";
+const chessLevels = window.ptcLevels("chess");
+const ladder = window.ptcLadder($("ladder"), "chess", CHESS_LEVELS);
 
 // Finished results go to the feed unless the player unticks this; the choice
 // is remembered in this browser.
@@ -589,11 +597,11 @@ async function start() {
   setStatus("Creating the game on-chain…", true);
   animateThinking();
   try {
-    const [depth, skill, blunder] = $("depth").value.split(":");
-    game = await call("POST", "/api/game", depth + "\n" + $("side").value + "\n" + skill + "\n" + blunder);
+    // The canister turns the level into the engine's settings.
+    game = await call("POST", "/api/game", "L" + ladder.level() + "\n" + $("side").value);
     key = game.key; store(game.id, key);
     history.replaceState(null, "", "/game/" + game.id);
-    window.ptcTrack?.("chess_start", { level: $("depth").selectedOptions[0]?.textContent.trim() });
+    window.ptcTrack?.("chess_start", { level: ladder.level() });
     view = null;
     $("setup").hidden = true;
     afterUpdate();

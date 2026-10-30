@@ -23,6 +23,7 @@ struct MgRound {
   uint32_t day = 0;
   uint64_t created_ns = 0;
   std::string name;
+  int level = MG_CLASSIC;
   std::vector<MgStroke> shots;
 
   MgPoint ball(const MgCourse &course) const; // where the next shot starts
@@ -33,7 +34,10 @@ struct MgRound {
 
 constexpr size_t MG_MAX_SHOTS = 10;
 
-MgRound mg_round_new(uint32_t day, const std::string &name, uint64_t now_ns);
+MgRound mg_round_new(uint32_t day, const std::string &name, uint64_t now_ns,
+                     int level = MG_CLASSIC);
+// The course a round was played on: its day, at its level.
+MgCourse mg_round_course(const MgRound &round);
 bool mg_round_load(uint64_t id, MgRound &round);
 void mg_round_save(const MgRound &round);
 std::vector<uint64_t> mg_day_rounds(uint32_t day);
@@ -41,4 +45,5 @@ std::vector<uint64_t> mg_day_rounds(uint32_t day);
 std::string mg_round_json(const MgRound &round, const MgCourse &course,
                           bool with_key);
 std::string mg_frames_json(const std::vector<MgPoint> &frames);
+// As golf_leaderboard_json: the highest level first, then the fewest strokes.
 std::string mg_leaderboard_json(uint32_t day);

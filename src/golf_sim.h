@@ -15,15 +15,16 @@ struct GolfBox { // a static obstacle, centred at (x, y)
   float x = 0, y = 0, half_w = 0, half_h = 0, angle = 0;
 };
 
-// Levels of the same daily hole: Easy has a wider cup, Pro a narrower one and
-// a wind. Normal is the hole as it always was.
-constexpr int GOLF_EASY = 0, GOLF_NORMAL = 1, GOLF_PRO = 2;
+// Levels 1..20 of the same daily hole. Level 10 is the hole as it always was;
+// below it the cup is wider and holds faster balls, above it the cup is
+// tighter and a headwind grows.
+constexpr int GOLF_CLASSIC = 10, GOLF_MAX_LEVEL = 20;
 
 struct GolfCourse {
   uint32_t day = 0; // days since 1970-01-01, UTC
-  int level = GOLF_NORMAL;
+  int level = GOLF_CLASSIC;
   float cup_half_w = 0.32f;
-  float wind = 0; // m/s², along x, on the ball while it flies (Pro only)
+  float wind = 0; // m/s², along x, on the ball while it flies (above level 10)
   float catch_speed = 1.5f; // the cup holds a ball slower than this, m/s
   std::vector<GolfPoint> ground; // left to right, the cup cut into it
   float cup_x = 0, cup_y = 0;    // the middle of the cup's rim
@@ -47,7 +48,7 @@ constexpr float GOLF_MAX_POWER = 100.0f; // percent
 
 // drilled: the cup cut into the ground. Rounds before the fix played holes
 // without one, and keep them, so they still recompute exactly.
-GolfCourse golf_course(uint32_t day, bool drilled = true, int level = GOLF_NORMAL);
+GolfCourse golf_course(uint32_t day, bool drilled = true, int level = GOLF_CLASSIC);
 
 // One stroke from `from`. angle in degrees (0..180), power in percent.
 ShotResult golf_shoot(const GolfCourse &course, GolfPoint from, float angle,

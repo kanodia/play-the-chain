@@ -51,7 +51,7 @@
 <main>
   <header>
     <h1>The <span>feed</span></h1>
-    <nav><a href="/">Home</a><a href="/chess">♟ Chess</a><a href="/golf">⛳ Golf</a><a href="/games">All games</a></nav>
+    <nav><a href="/">Home</a><a href="/chess">♟ Chess</a><a href="/golf">⛳ Golf</a><a href="/minigolf">🏌 3D</a><a href="/games">All games</a></nav>
   </header>
   <p class="sub">Results players posted, straight from the chain. Every one was computed by 13 computers, so nobody can fake a score.
     Finish a round or a game, then press <b>Post to feed</b>.</p>
@@ -68,7 +68,7 @@ async function call(method, path, body) {
   if (!res.ok) throw new Error(data.error || "HTTP " + res.status);
   return data;
 }
-const ICON = { golf: "⛳", chess: "♟", fuel: "⛽" };
+const ICON = { golf: "⛳", minigolf: "🏌", chess: "♟", fuel: "⛽" };
 const EMOJI = ["🔥", "👏", "😮"];
 const ago = (ns) => {
   const s = Math.max(0, (Date.now() - ns / 1e6) / 1000);

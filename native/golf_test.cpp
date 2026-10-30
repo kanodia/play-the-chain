@@ -12,9 +12,9 @@
 
 static float dist(const GolfCourse &c, GolfPoint p) { return std::fabs(p.x - c.cup_x); }
 
-// Optional argument: the level, 0 Easy, 1 Normal (default), 2 Pro.
+// Optional argument: the level, 1-20 (default 10, the classic hole).
 int main(int argc, char **argv) {
-  int level = argc > 1 ? std::atoi(argv[1]) : GOLF_NORMAL;
+  int level = argc > 1 ? std::atoi(argv[1]) : GOLF_CLASSIC;
   int unsolved = 0, total_strokes = 0, shots = 0;
   long long steps = 0;
   auto t0 = std::chrono::steady_clock::now();

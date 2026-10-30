@@ -6,14 +6,19 @@
 #include <cmath>
 #include <cstdio>
 
+#include <cstdlib>
+
 #include "minigolf_sim.h"
 
-int main() {
+// Optional argument: the level, 1-20 (default 10, the classic hole).
+int main(int argc, char **argv) {
+  int level = argc > 1 ? std::atoi(argv[1]) : MG_CLASSIC;
+  int days = argc > 2 ? std::atoi(argv[2]) : 20; // optional: how many days
   int unsolved = 0, shots = 0;
   long long steps = 0;
   auto t0 = std::chrono::steady_clock::now();
-  for (uint32_t day = 20750; day < 20770; ++day) {
-    MgCourse c = mg_course(day);
+  for (uint32_t day = 20750; day < 20750 + uint32_t(days); ++day) {
+    MgCourse c = mg_course(day, level);
     MgShot a = mg_shoot(c, c.tee, 10, 50, mg_phase(day, 0)), b = mg_shoot(c, c.tee, 10, 50, mg_phase(day, 0));
     if (a.end.x != b.end.x || a.end.y != b.end.y || a.end.z != b.end.z) {
       std::printf("day %u: NOT deterministic\n", day);

@@ -31,14 +31,19 @@ GolfCourse golf_course(uint32_t day, bool drilled, int level) {
   GolfCourse c;
   c.day = day;
   c.level = level;
-  c.cup_half_w = level == GOLF_EASY ? 0.55f : level == GOLF_PRO ? 0.24f : CUP_HALF_W;
-  // Easy's cup also holds faster balls; Pro's only slow ones.
-  c.catch_speed = level == GOLF_EASY ? 3.0f : level == GOLF_PRO ? 1.0f : 1.5f;
-  if (level == GOLF_PRO) {
-    // A headwind (towards the tee), its own generator so the hole itself is
-    // the same at every level.
+  // Level 10 keeps the classic numbers exactly, so older rounds recompute.
+  if (level < GOLF_CLASSIC) {
+    float easy = float(GOLF_CLASSIC - level) / 9.0f; // 1 at level 1
+    c.cup_half_w = CUP_HALF_W + (0.70f - CUP_HALF_W) * easy;
+    c.catch_speed = 1.5f + 2.0f * easy;
+  } else if (level > GOLF_CLASSIC) {
+    float hard = float(level - GOLF_CLASSIC) / 10.0f; // 1 at level 20
+    c.cup_half_w = CUP_HALF_W - 0.10f * hard;
+    c.catch_speed = 1.5f - 0.6f * hard;
+    // A headwind (towards the tee), from its own generator so the hole itself
+    // is the same at every level.
     Rng w(uint64_t(day) ^ 0x57494E44ULL);
-    c.wind = -w.uniform(1.5f, 3.5f);
+    c.wind = -3.0f * hard * w.uniform(0.85f, 1.15f);
   }
   const float half = c.cup_half_w;
 

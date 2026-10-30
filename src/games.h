@@ -25,6 +25,7 @@ struct Game {
   int depth = 14;
   int skill = 20;   // Stockfish's Skill Level: 20 is full strength
   int blunder = 0;  // percent of engine moves that are a random legal move
+  int level = 0;    // 1..20 for games started at a level; 0 for older games
   char human = 'w'; // the side the human plays
   uint64_t created_ns = 0;
   std::vector<Ply> plies;

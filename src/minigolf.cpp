@@ -49,7 +49,9 @@ static uint64_t rounds_count() {
   return n;
 }
 
-MgRound mg_round_new(uint32_t day, const std::string &name, uint64_t now_ns) {
+MgCourse mg_round_course(const MgRound &r) { return mg_course(r.day, r.level); }
+
+MgRound mg_round_new(uint32_t day, const std::string &name, uint64_t now_ns, int level) {
   uint64_t id = rounds_count() + 1;
   {
     std::ofstream file(COUNT_PATH, std::ios::trunc);
@@ -68,14 +70,17 @@ MgRound mg_round_new(uint32_t day, const std::string &name, uint64_t now_ns) {
   r.day = day;
   r.created_ns = now_ns;
   r.name = golf_clean_name(name);
+  r.level = level;
   return r;
 }
 
-// Line 1: "<key> <day> <created_ns> <name...>"; then one stroke per line:
+// Line 1: "<key> <day> <created_ns> [#<level> ]<name...>", as in Chain Golf; then one stroke per line:
 // "<yaw bits> <power bits> <end x> <end y> <end z bits> <r|h|o> <instructions>".
 void mg_round_save(const MgRound &r) {
   std::ofstream file(round_path(r.id), std::ios::trunc);
-  file << r.key << ' ' << r.day << ' ' << r.created_ns << ' ' << r.name << '\n';
+  file << r.key << ' ' << r.day << ' ' << r.created_ns << ' ';
+  if (r.level != MG_CLASSIC) file << '#' << r.level << ' ';
+  file << r.name << '\n';
   for (const MgStroke &s : r.shots)
     file << bits(s.yaw) << ' ' << bits(s.power) << ' ' << bits(s.end.x) << ' '
          << bits(s.end.y) << ' ' << bits(s.end.z) << ' '
@@ -93,6 +98,7 @@ bool mg_round_load(uint64_t id, MgRound &r) {
   file >> r.key >> r.day >> r.created_ns;
   std::getline(file, r.name);
   if (!r.name.empty() && r.name.front() == ' ') r.name.erase(r.name.begin());
+  r.level = golf_take_level(r.name);
   std::string line;
   while (std::getline(file, line)) {
     std::istringstream in(line);
@@ -135,6 +141,7 @@ std::string mg_round_json(const MgRound &r, const MgCourse &c, bool with_key) {
   char buf[220];
   MgPoint b = r.ball(c);
   std::string out = "{\"id\":" + std::to_string(r.id) + ",\"day\":" + std::to_string(r.day) +
+                    ",\"level\":" + std::to_string(r.level) +
                     ",\"name\":\"" + r.name + "\",\"created_ns\":" + std::to_string(r.created_ns) +
                     ",\"strokes\":" + std::to_string(r.strokes()) +
                     ",\"status\":\"" + (r.holed() ? "holed" : r.finished() ? "gave_up" : "playing") + "\"";
@@ -156,7 +163,7 @@ std::string mg_round_json(const MgRound &r, const MgCourse &c, bool with_key) {
 
 // Today's best holed rounds: fewest strokes, then the earliest.
 std::string mg_leaderboard_json(uint32_t day) {
-  struct Entry { uint64_t id; std::string name; int strokes; uint64_t created_ns; };
+  struct Entry { uint64_t id; std::string name; int strokes; uint64_t created_ns; int level; };
   std::vector<Entry> holed;
   size_t played = 0, aces = 0;
   for (uint64_t id : mg_day_rounds(day)) {
@@ -165,15 +172,17 @@ std::string mg_leaderboard_json(uint32_t day) {
     ++played;
     if (!r.holed()) continue;
     if (r.strokes() == 1) ++aces;
-    holed.push_back({r.id, r.name, r.strokes(), r.created_ns});
+    holed.push_back({r.id, r.name, r.strokes(), r.created_ns, r.level});
   }
   std::sort(holed.begin(), holed.end(), [](const Entry &a, const Entry &b) {
+    if (a.level != b.level) return a.level > b.level;
     return a.strokes != b.strokes ? a.strokes < b.strokes : a.created_ns < b.created_ns;
   });
   std::string out = "{\"played\":" + std::to_string(played) + ",\"holed\":" +
                     std::to_string(holed.size()) + ",\"aces\":" + std::to_string(aces) + ",\"top\":[";
   for (size_t i = 0; i < holed.size() && i < 20; ++i)
     out += std::string(i ? "," : "") + "{\"id\":" + std::to_string(holed[i].id) + ",\"name\":\"" +
-           holed[i].name + "\",\"strokes\":" + std::to_string(holed[i].strokes) + "}";
+           holed[i].name + "\",\"strokes\":" + std::to_string(holed[i].strokes) +
+           ",\"level\":" + std::to_string(holed[i].level) + "}";
   return out + "]}";
 }

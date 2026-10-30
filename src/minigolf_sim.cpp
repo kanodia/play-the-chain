@@ -43,10 +43,13 @@ float MgCourse::cup_rim() const {
   return height(cup_i, cup_k); // the cup sits on a flattened patch
 }
 
-MgCourse mg_course(uint32_t day) {
+MgCourse mg_course(uint32_t day, int level) {
   Rng rng(day);
   MgCourse c;
   c.day = day;
+  c.level = level;
+  if (level < MG_CLASSIC) c.catch_speed = 0.6f + 0.8f * float(MG_CLASSIC - level) / 9.0f; // 1.4 at level 1
+  if (level > MG_CLASSIC) c.catch_speed = 0.6f - 0.3f * float(level - MG_CLASSIC) / 10.0f; // 0.3 at 20
   c.nx = 72; // 18 m
   c.nz = 24; // 6 m
   c.cup_i = int(rng.uniform(60, 66));
@@ -99,6 +102,23 @@ MgCourse mg_course(uint32_t day) {
     c.obstacles.push_back(o);
   }
   c.par = windmill ? 3 : 2;
+  if (level > MG_CLASSIC) {
+    for (MgObstacle &o : c.obstacles)
+      if (o.kind == MgKind::Windmill) o.omega *= 1.0f + 0.12f * float(level - MG_CLASSIC); // 2.2x at 20
+    // Bumpers guarding the cup: one from level 14, two from 18. Their own
+    // generator, so the rest of the hole is the same at every level.
+    Rng p(uint64_t(day) ^ 0x50524FULL);
+    int guards = level >= 18 ? 2 : level >= 14 ? 1 : 0;
+    for (int g = 0; g < guards; ++g) {
+      MgObstacle guard;
+      guard.kind = MgKind::Bumper;
+      guard.x = cx - p.uniform(0.9f, 1.4f);
+      guard.z = cz + (g ? -1.0f : 1.0f) * p.uniform(0.15f, 0.45f);
+      guard.half_x = 0.16f;
+      guard.half_y = 0.15f;
+      c.obstacles.push_back(guard);
+    }
+  }
   return c;
 }
 
@@ -229,7 +249,7 @@ MgShot mg_shoot(const MgCourse &c, MgPoint from, float yaw, float power, float p
     bool in_cup = std::fabs(p.x() - cx) < half && std::fabs(p.z() - cz) < half &&
                   p.y() < rim - CUP_DEPTH + MG_BALL_RADIUS * 1.8f;
     float vel = ball->getLinearVelocity().length();
-    if (in_cup && vel < 0.6f) {
+    if (in_cup && vel < c.catch_speed) {
       r.how = MgEnd::Holed;
       break;
     }
@@ -245,9 +265,9 @@ MgShot mg_shoot(const MgCourse &c, MgPoint from, float yaw, float power, float p
 std::string mg_course_json(const MgCourse &c) {
   char buf[200];
   std::snprintf(buf, sizeof buf,
-                "{\"day\":%u,\"par\":%d,\"nx\":%d,\"nz\":%d,\"cell\":%.3f,\"cup\":{\"i\":%d,\"k\":%d,\"rim\":%.4f,\"depth\":%.3f},"
+                "{\"day\":%u,\"level\":%d,\"par\":%d,\"nx\":%d,\"nz\":%d,\"cell\":%.3f,\"cup\":{\"i\":%d,\"k\":%d,\"rim\":%.4f,\"depth\":%.3f},"
                 "\"tee\":{\"x\":%.3f,\"y\":%.4f,\"z\":%.3f},\"ball_radius\":%.3f,\"steps_per_frame\":%d,\"heights\":[",
-                c.day, c.par, c.nx, c.nz, c.cell, c.cup_i, c.cup_k, c.cup_rim(), CUP_DEPTH, c.tee.x, c.tee.y, c.tee.z,
+                c.day, c.level, c.par, c.nx, c.nz, c.cell, c.cup_i, c.cup_k, c.cup_rim(), CUP_DEPTH, c.tee.x, c.tee.y, c.tee.z,
                 MG_BALL_RADIUS, MG_STEPS_PER_FRAME);
   std::string out = buf;
   for (size_t i = 0; i < c.heights.size(); ++i) {

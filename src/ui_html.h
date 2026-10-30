@@ -368,6 +368,16 @@ main { animation: none; }
   .fabric-badge { transition: none; }
   ::view-transition-old(root), ::view-transition-new(root) { animation: none; }
 }
+
+/* The level ladder (ptcLadder, in every page's head). */
+.ladder { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 6px 10px; align-items: center; flex-basis: 100%;
+  background: rgba(94, 242, 200, .06); border: 1px solid rgba(94, 242, 200, .22); border-radius: 12px; padding: 8px 10px; }
+.ladder .lv-step { font-size: 18px; padding: 6px 12px; }
+.ladder .lv-mid { text-align: center; }
+.ladder .lv-n { display: block; font-size: 18px; }
+.ladder .lv-desc { display: block; color: var(--muted, #8b93a7); font-size: 12.5px; }
+.ladder .lv-unlocked { grid-column: 1 / -1; text-align: center; color: var(--muted, #8b93a7); font-size: 12px; }
+.unlocked-note { color: #9ff8de; font-weight: 600; }
 )JS";
 
 static const char HOME_HTML[] = R"HTML(<!doctype html>
@@ -376,7 +386,7 @@ static const char HOME_HTML[] = R"HTML(<!doctype html>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Play the Chain</title>
-<meta name="description" content="Games whose every move runs inside a smart contract: Stockfish chess and Box2D golf, compiled from C++ with icpp-pro and running in one Internet Computer canister.">
+<meta name="description" content="Games whose every move runs inside a smart contract: Stockfish chess, Box2D golf and Bullet 3D mini-golf, 20 levels each, compiled from C++ with icpp-pro and running in one Internet Computer canister.">
 <style>
   :root {
     --bg: #0b0d12; --panel: #141821; --panel2: #10131a; --line: #232938; --text: #e8ecf3; --muted: #8b93a7;
@@ -417,7 +427,7 @@ static const char HOME_HTML[] = R"HTML(<!doctype html>
   .feedstrip .fs-empty { color: var(--muted); padding: 10px 0; font-size: 14px; }
   h2.sec a { color: var(--accent); text-transform: none; letter-spacing: 0; }
   h2.sec { font-size: 13px; color: var(--muted); text-transform: uppercase; letter-spacing: .08em; margin: 40px 0 12px; font-weight: 600; }
-  .games { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
+  .games { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; }
   @media (max-width: 1000px) { .games { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
   @media (max-width: 760px) { .games { grid-template-columns: minmax(0, 1fr); } }
   .card { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; overflow: hidden; display: flex; flex-direction: column; text-decoration: none; color: var(--text); }
@@ -481,6 +491,42 @@ window.ptcTrack = (name, data) => {
   try { fetch("/api/event", { method: "POST", body: name, keepalive: true }).catch(() => {}); } catch (e) {}
   try { window.umami && window.umami.track(name, data); } catch (e) {}
 };
+// The level ladder, shared by the games: levels 1..20, unlocked one at a
+// time by winning, remembered per game in this browser.
+window.ptcLevels = (game) => {
+  const key = "ptc-" + game, get = (k, d) => { try { const v = +localStorage.getItem(key + k); return v >= 1 && v <= 20 ? v : d; } catch (e) { return d; } };
+  const put = (k, v) => { try { localStorage.setItem(key + k, String(v)); } catch (e) {} };
+  return {
+    unlocked: () => get("-unlocked", 1),
+    current: () => Math.min(get("-level", 1), get("-unlocked", 1)),
+    set: (n) => put("-level", n),
+    unlock: (n) => { if (n <= 20 && n > get("-unlocked", 1)) { put("-unlocked", n); return true; } return false; },
+  };
+};
+// Draws the ladder into `box`: ◀ Level n ▶, what the level is like, and how
+// far this browser has unlocked. onChange(n) runs when the player moves.
+window.ptcLadder = (box, game, describe, onChange) => {
+  const lv = window.ptcLevels(game);
+  box.classList.add("ladder");
+  box.innerHTML = `<button type="button" class="lv-step" data-d="-1" aria-label="Easier level">◀</button>
+    <div class="lv-mid"><b class="lv-n"></b><small class="lv-desc"></small></div>
+    <button type="button" class="lv-step" data-d="1" aria-label="Harder level">▶</button>
+    <small class="lv-unlocked"></small>`;
+  const show = (n) => {
+    box.querySelector(".lv-n").textContent = "Level " + n;
+    box.querySelector(".lv-desc").textContent = describe(n);
+    box.querySelector('[data-d="-1"]').disabled = n <= 1;
+    box.querySelector('[data-d="1"]').disabled = n >= lv.unlocked();
+    box.querySelector(".lv-unlocked").textContent = lv.unlocked() >= 20 ? "All 20 levels unlocked 🏆"
+      : `Unlocked: 1–${lv.unlocked()} · win to unlock level ${lv.unlocked() + 1} 🔒`;
+  };
+  let n = lv.current();
+  box.querySelectorAll(".lv-step").forEach((b) => b.onclick = () => {
+    n = Math.max(1, Math.min(lv.unlocked(), n + +b.dataset.d)); lv.set(n); show(n); onChange && onChange(n);
+  });
+  show(n);
+  return { level: () => n, refresh: () => { n = lv.current(); show(n); } };
+};
 try {
   if (!sessionStorage.getItem("ptc-visit")) {
     sessionStorage.setItem("ptc-visit", "1");
@@ -491,14 +537,14 @@ try {
 } catch (e) {}
 </script>
 <script defer src="https://cloud.umami.is/script.js" data-website-id="e9e6a912-fa89-4868-8068-7115dd8ac132" data-domains="ne5l7-xiaaa-aaaaj-qsm3q-cai.icp0.io"></script>
-<link rel="stylesheet" href="/fabric.css?v=718b5ac8e8">
-<script type="module" src="/fabric.js?v=718b5ac8e8"></script>
+<link rel="stylesheet" href="/fabric.css?v=0b37d8b5ef">
+<script type="module" src="/fabric.js?v=0b37d8b5ef"></script>
 </head>
 <body data-fabric="hero">
 <main>
   <nav class="top">
     <a class="brand" href="/">Play the <span>Chain</span></a>
-    <a href="/chess">♟ Chess</a><a href="/golf">⛳ Golf</a><a href="/feed">📣 Feed</a><a href="/games">Dashboard</a><a href="#fuel">⛽ Fuel</a>
+    <a href="/chess">♟ Chess</a><a href="/golf">⛳ Golf</a><a href="/minigolf">🏌 3D</a><a href="/feed">📣 Feed</a><a href="/games">Dashboard</a><a href="#fuel">⛽ Fuel</a>
   </nav>
 
   <section class="hero">
@@ -547,7 +593,7 @@ try {
         <div class="go">Play today's hole →</div>
       </div>
     </a>
-    <a class="card" href="/minigolf" hidden><!-- shown at launch -->
+    <a class="card" href="/minigolf">
       <div class="art">
         <svg viewBox="0 0 320 120" width="300" height="112" aria-hidden="true">
           <path d="M40 88 L120 40 L300 40 L220 88 Z" fill="#2f8656" stroke="#8b5e3c" stroke-width="5" stroke-linejoin="round"/>
@@ -690,7 +736,7 @@ $("refuel").onclick = refuel;
 
 // The latest posts from /feed, newest first.
 async function loadFeedStrip() {
-  const ICON = { golf: "⛳", chess: "♟", fuel: "⛽" };
+  const ICON = { golf: "⛳", minigolf: "🏌", chess: "♟", fuel: "⛽" };
   try {
     const d = await call("GET", "/api/feed");
     const box = $("feedstrip");
@@ -880,6 +926,42 @@ window.ptcTrack = (name, data) => {
   try { fetch("/api/event", { method: "POST", body: name, keepalive: true }).catch(() => {}); } catch (e) {}
   try { window.umami && window.umami.track(name, data); } catch (e) {}
 };
+// The level ladder, shared by the games: levels 1..20, unlocked one at a
+// time by winning, remembered per game in this browser.
+window.ptcLevels = (game) => {
+  const key = "ptc-" + game, get = (k, d) => { try { const v = +localStorage.getItem(key + k); return v >= 1 && v <= 20 ? v : d; } catch (e) { return d; } };
+  const put = (k, v) => { try { localStorage.setItem(key + k, String(v)); } catch (e) {} };
+  return {
+    unlocked: () => get("-unlocked", 1),
+    current: () => Math.min(get("-level", 1), get("-unlocked", 1)),
+    set: (n) => put("-level", n),
+    unlock: (n) => { if (n <= 20 && n > get("-unlocked", 1)) { put("-unlocked", n); return true; } return false; },
+  };
+};
+// Draws the ladder into `box`: ◀ Level n ▶, what the level is like, and how
+// far this browser has unlocked. onChange(n) runs when the player moves.
+window.ptcLadder = (box, game, describe, onChange) => {
+  const lv = window.ptcLevels(game);
+  box.classList.add("ladder");
+  box.innerHTML = `<button type="button" class="lv-step" data-d="-1" aria-label="Easier level">◀</button>
+    <div class="lv-mid"><b class="lv-n"></b><small class="lv-desc"></small></div>
+    <button type="button" class="lv-step" data-d="1" aria-label="Harder level">▶</button>
+    <small class="lv-unlocked"></small>`;
+  const show = (n) => {
+    box.querySelector(".lv-n").textContent = "Level " + n;
+    box.querySelector(".lv-desc").textContent = describe(n);
+    box.querySelector('[data-d="-1"]').disabled = n <= 1;
+    box.querySelector('[data-d="1"]').disabled = n >= lv.unlocked();
+    box.querySelector(".lv-unlocked").textContent = lv.unlocked() >= 20 ? "All 20 levels unlocked 🏆"
+      : `Unlocked: 1–${lv.unlocked()} · win to unlock level ${lv.unlocked() + 1} 🔒`;
+  };
+  let n = lv.current();
+  box.querySelectorAll(".lv-step").forEach((b) => b.onclick = () => {
+    n = Math.max(1, Math.min(lv.unlocked(), n + +b.dataset.d)); lv.set(n); show(n); onChange && onChange(n);
+  });
+  show(n);
+  return { level: () => n, refresh: () => { n = lv.current(); show(n); } };
+};
 try {
   if (!sessionStorage.getItem("ptc-visit")) {
     sessionStorage.setItem("ptc-visit", "1");
@@ -890,8 +972,8 @@ try {
 } catch (e) {}
 </script>
 <script defer src="https://cloud.umami.is/script.js" data-website-id="e9e6a912-fa89-4868-8068-7115dd8ac132" data-domains="ne5l7-xiaaa-aaaaj-qsm3q-cai.icp0.io"></script>
-<link rel="stylesheet" href="/fabric.css?v=718b5ac8e8">
-<script type="module" src="/fabric.js?v=718b5ac8e8"></script>
+<link rel="stylesheet" href="/fabric.css?v=0b37d8b5ef">
+<script type="module" src="/fabric.js?v=0b37d8b5ef"></script>
 </head>
 <body>
 <main>
@@ -916,14 +998,7 @@ try {
       <div class="panel">
         <div id="status" class="status">Start a game. The canister will referee it.</div>
         <div id="setup" class="row">
-          <select id="depth" aria-label="Engine strength">
-            <!-- "<depth>:<Stockfish Skill Level>:<% random moves>": the lower levels play weaker moves on purpose -->
-            <option value="1:0:50">🐣 Beginner</option>
-            <option value="1:0:15" selected>🙂 Easy</option>
-            <option value="7:6:0">♟ Club</option>
-            <option value="14:20:0">🔥 Strong · full strength</option>
-            <option value="18:20:0">💀 Full · depth 18</option>
-          </select>
+          <div id="ladder"></div>
           <select id="side" aria-label="Your side">
             <option value="w">I play white</option>
             <option value="b">I play black</option>
@@ -1267,7 +1342,14 @@ function afterUpdate() {
   if (key && lastStatus === "playing" && game.status !== "playing") {
     const won = game.status === "checkmate" && game.moves.length && game.moves[game.moves.length - 1].by !== "engine";
     window.ptcTrack?.("chess_end", { result: won ? "win" : game.status === "checkmate" ? "loss" : "draw", moves: Math.ceil(plies() / 2) });
-    if (won) window.ptcTrack?.("chess_win");
+    if (won) {
+      window.ptcTrack?.("chess_win", { level: game.level_n });
+      // A win unlocks the next level.
+      if (game.level_n && chessLevels.unlock(game.level_n + 1)) {
+        chessLevels.set(game.level_n + 1); ladder.refresh();
+        setStatus(statusText() + ` 🔓 Level ${game.level_n + 1} unlocked!`);
+      }
+    }
     if (autoPost()) postFeed();
   }
   lastStatus = game.status;
@@ -1299,6 +1381,14 @@ function updateShare() {
   // Your own game, once it's over or has some moves in it, can go to the feed.
   $("feed-row").hidden = !(key && (game.status !== "playing" || plies() >= 10));
 }
+
+// The 20 levels: random mistakes first, then Stockfish's Skill Level, then
+// full strength. The canister holds the settings; this only describes them.
+const CHESS_LEVELS = (n) => n <= 3 ? "Stockfish blunders a lot" : n <= 6 ? "Stockfish makes plenty of mistakes"
+  : n <= 9 ? "Stockfish makes some mistakes" : n === 10 ? "No random mistakes any more" : n <= 14 ? "Club strength"
+  : n <= 19 ? "Strong: thinks deeper every level" : "Full Stockfish, depth 18: nobody has won";
+const chessLevels = window.ptcLevels("chess");
+const ladder = window.ptcLadder($("ladder"), "chess", CHESS_LEVELS);
 
 // Finished results go to the feed unless the player unticks this; the choice
 // is remembered in this browser.
@@ -1339,11 +1429,11 @@ async function start() {
   setStatus("Creating the game on-chain…", true);
   animateThinking();
   try {
-    const [depth, skill, blunder] = $("depth").value.split(":");
-    game = await call("POST", "/api/game", depth + "\n" + $("side").value + "\n" + skill + "\n" + blunder);
+    // The canister turns the level into the engine's settings.
+    game = await call("POST", "/api/game", "L" + ladder.level() + "\n" + $("side").value);
     key = game.key; store(game.id, key);
     history.replaceState(null, "", "/game/" + game.id);
-    window.ptcTrack?.("chess_start", { level: $("depth").selectedOptions[0]?.textContent.trim() });
+    window.ptcTrack?.("chess_start", { level: ladder.level() });
     view = null;
     $("setup").hidden = true;
     afterUpdate();
@@ -1517,6 +1607,42 @@ window.ptcTrack = (name, data) => {
   try { fetch("/api/event", { method: "POST", body: name, keepalive: true }).catch(() => {}); } catch (e) {}
   try { window.umami && window.umami.track(name, data); } catch (e) {}
 };
+// The level ladder, shared by the games: levels 1..20, unlocked one at a
+// time by winning, remembered per game in this browser.
+window.ptcLevels = (game) => {
+  const key = "ptc-" + game, get = (k, d) => { try { const v = +localStorage.getItem(key + k); return v >= 1 && v <= 20 ? v : d; } catch (e) { return d; } };
+  const put = (k, v) => { try { localStorage.setItem(key + k, String(v)); } catch (e) {} };
+  return {
+    unlocked: () => get("-unlocked", 1),
+    current: () => Math.min(get("-level", 1), get("-unlocked", 1)),
+    set: (n) => put("-level", n),
+    unlock: (n) => { if (n <= 20 && n > get("-unlocked", 1)) { put("-unlocked", n); return true; } return false; },
+  };
+};
+// Draws the ladder into `box`: ◀ Level n ▶, what the level is like, and how
+// far this browser has unlocked. onChange(n) runs when the player moves.
+window.ptcLadder = (box, game, describe, onChange) => {
+  const lv = window.ptcLevels(game);
+  box.classList.add("ladder");
+  box.innerHTML = `<button type="button" class="lv-step" data-d="-1" aria-label="Easier level">◀</button>
+    <div class="lv-mid"><b class="lv-n"></b><small class="lv-desc"></small></div>
+    <button type="button" class="lv-step" data-d="1" aria-label="Harder level">▶</button>
+    <small class="lv-unlocked"></small>`;
+  const show = (n) => {
+    box.querySelector(".lv-n").textContent = "Level " + n;
+    box.querySelector(".lv-desc").textContent = describe(n);
+    box.querySelector('[data-d="-1"]').disabled = n <= 1;
+    box.querySelector('[data-d="1"]').disabled = n >= lv.unlocked();
+    box.querySelector(".lv-unlocked").textContent = lv.unlocked() >= 20 ? "All 20 levels unlocked 🏆"
+      : `Unlocked: 1–${lv.unlocked()} · win to unlock level ${lv.unlocked() + 1} 🔒`;
+  };
+  let n = lv.current();
+  box.querySelectorAll(".lv-step").forEach((b) => b.onclick = () => {
+    n = Math.max(1, Math.min(lv.unlocked(), n + +b.dataset.d)); lv.set(n); show(n); onChange && onChange(n);
+  });
+  show(n);
+  return { level: () => n, refresh: () => { n = lv.current(); show(n); } };
+};
 try {
   if (!sessionStorage.getItem("ptc-visit")) {
     sessionStorage.setItem("ptc-visit", "1");
@@ -1527,8 +1653,8 @@ try {
 } catch (e) {}
 </script>
 <script defer src="https://cloud.umami.is/script.js" data-website-id="e9e6a912-fa89-4868-8068-7115dd8ac132" data-domains="ne5l7-xiaaa-aaaaj-qsm3q-cai.icp0.io"></script>
-<link rel="stylesheet" href="/fabric.css?v=718b5ac8e8">
-<script type="module" src="/fabric.js?v=718b5ac8e8"></script>
+<link rel="stylesheet" href="/fabric.css?v=0b37d8b5ef">
+<script type="module" src="/fabric.js?v=0b37d8b5ef"></script>
 </head>
 <body>
 <main>
@@ -1766,10 +1892,6 @@ static const char GOLF_HTML[] = R"HTML(<!doctype html>
   button.primary { background: var(--accent); color: #062a20; border-color: var(--accent); font-weight: 600; }
   button:disabled { opacity: .5; cursor: default; }
   input[type=text] { width: 180px; }
-  .levels { display: flex; gap: 6px; flex-basis: 100%; }
-  .levels button { flex: 1; padding: 8px 6px; }
-  .levels button.on { border-color: var(--accent); background: rgba(94,242,200,.14); color: var(--accent); font-weight: 600; }
-  .levels small { display: block; font-size: 11.5px; color: var(--muted); font-weight: 400; }
   .aim { display: grid; grid-template-columns: max-content minmax(0, 1fr) 4.5em; gap: 8px 12px; align-items: center; margin-top: 12px; font-size: 14px; }
   .aim output { font-variant-numeric: tabular-nums; text-align: right; color: var(--muted); }
   input[type=range] { width: 100%; accent-color: #5ef2c8; }
@@ -1802,6 +1924,42 @@ window.ptcTrack = (name, data) => {
   try { fetch("/api/event", { method: "POST", body: name, keepalive: true }).catch(() => {}); } catch (e) {}
   try { window.umami && window.umami.track(name, data); } catch (e) {}
 };
+// The level ladder, shared by the games: levels 1..20, unlocked one at a
+// time by winning, remembered per game in this browser.
+window.ptcLevels = (game) => {
+  const key = "ptc-" + game, get = (k, d) => { try { const v = +localStorage.getItem(key + k); return v >= 1 && v <= 20 ? v : d; } catch (e) { return d; } };
+  const put = (k, v) => { try { localStorage.setItem(key + k, String(v)); } catch (e) {} };
+  return {
+    unlocked: () => get("-unlocked", 1),
+    current: () => Math.min(get("-level", 1), get("-unlocked", 1)),
+    set: (n) => put("-level", n),
+    unlock: (n) => { if (n <= 20 && n > get("-unlocked", 1)) { put("-unlocked", n); return true; } return false; },
+  };
+};
+// Draws the ladder into `box`: ◀ Level n ▶, what the level is like, and how
+// far this browser has unlocked. onChange(n) runs when the player moves.
+window.ptcLadder = (box, game, describe, onChange) => {
+  const lv = window.ptcLevels(game);
+  box.classList.add("ladder");
+  box.innerHTML = `<button type="button" class="lv-step" data-d="-1" aria-label="Easier level">◀</button>
+    <div class="lv-mid"><b class="lv-n"></b><small class="lv-desc"></small></div>
+    <button type="button" class="lv-step" data-d="1" aria-label="Harder level">▶</button>
+    <small class="lv-unlocked"></small>`;
+  const show = (n) => {
+    box.querySelector(".lv-n").textContent = "Level " + n;
+    box.querySelector(".lv-desc").textContent = describe(n);
+    box.querySelector('[data-d="-1"]').disabled = n <= 1;
+    box.querySelector('[data-d="1"]').disabled = n >= lv.unlocked();
+    box.querySelector(".lv-unlocked").textContent = lv.unlocked() >= 20 ? "All 20 levels unlocked 🏆"
+      : `Unlocked: 1–${lv.unlocked()} · win to unlock level ${lv.unlocked() + 1} 🔒`;
+  };
+  let n = lv.current();
+  box.querySelectorAll(".lv-step").forEach((b) => b.onclick = () => {
+    n = Math.max(1, Math.min(lv.unlocked(), n + +b.dataset.d)); lv.set(n); show(n); onChange && onChange(n);
+  });
+  show(n);
+  return { level: () => n, refresh: () => { n = lv.current(); show(n); } };
+};
 try {
   if (!sessionStorage.getItem("ptc-visit")) {
     sessionStorage.setItem("ptc-visit", "1");
@@ -1812,14 +1970,14 @@ try {
 } catch (e) {}
 </script>
 <script defer src="https://cloud.umami.is/script.js" data-website-id="e9e6a912-fa89-4868-8068-7115dd8ac132" data-domains="ne5l7-xiaaa-aaaaj-qsm3q-cai.icp0.io"></script>
-<link rel="stylesheet" href="/fabric.css?v=718b5ac8e8">
-<script type="module" src="/fabric.js?v=718b5ac8e8"></script>
+<link rel="stylesheet" href="/fabric.css?v=0b37d8b5ef">
+<script type="module" src="/fabric.js?v=0b37d8b5ef"></script>
 </head>
 <body>
 <main>
   <header>
     <h1>Chain <span>Golf</span></h1>
-    <nav><a href="/">Home</a><a href="/chess">♟ Chess</a><a href="/feed">📣 Feed</a><a href="/games">All games</a><a href="/#fuel">⛽ Fuel</a></nav>
+    <nav><a href="/">Home</a><a href="/chess">♟ Chess</a><a href="/minigolf">🏌 3D</a><a href="/feed">📣 Feed</a><a href="/games">All games</a><a href="/#fuel">⛽ Fuel</a></nav>
   </header>
   <p class="sub">One hole a day. Every shot is simulated by <b>Box2D</b>, the C++ physics engine behind Angry Birds, running inside
     an Internet Computer canister on 13 computers. Your browser only draws what the chain computed, so nobody can fake a score.</p>
@@ -1835,11 +1993,7 @@ try {
       <div class="panel">
         <div id="status" class="status">Loading today's hole from the canister…</div>
         <div id="setup" class="row" hidden>
-          <div class="levels" id="levels" role="radiogroup" aria-label="Level">
-            <button data-level="0">🐣 Easy<small>wide cup · aim guide</small></button>
-            <button data-level="1">⛳ Normal<small>the classic</small></button>
-            <button data-level="2">🔥 Pro<small>tight cup · headwind</small></button>
-          </div>
+          <div id="ladder"></div>
           <input id="name" type="text" maxlength="16" placeholder="Your name (optional)" aria-label="Your name for the leaderboard">
           <button id="start" class="primary">Tee off</button>
           <label class="auto"><input type="checkbox" id="autopost" checked> 📣 Post my result to the feed</label>
@@ -1883,10 +2037,13 @@ try {
 <script>
 const $ = (id) => document.getElementById(id);
 const fmt = (n) => n >= 1e9 ? (n / 1e9).toFixed(2) + "B" : n >= 1e6 ? (n / 1e6).toFixed(1) + "M" : n >= 1e3 ? (n / 1e3).toFixed(1) + "k" : String(n);
-const LEVELS = ["Easy", "Normal", "Pro"];
-let level = 1; // the level picked for a new round; a round keeps its own
-try { const l = +localStorage.getItem("ptc-golf-level"); if (l >= 0 && l <= 2 && localStorage.getItem("ptc-golf-level") !== null) level = l; } catch (e) {}
-const KEY = (id) => "golf_key_" + id, MINE = (day, lv = level) => "golf_round_" + day + (lv === 1 ? "" : "_" + lv);
+// Levels 1..20 of the same hole: 10 is the classic; below it the cup is
+// wider and there's an aim guide, above it the cup tightens and a headwind grows.
+const GOLF_LEVELS = (n) => n <= 4 ? "Wide cup · full aim guide" : n <= 9 ? "Wider cup · short aim guide"
+  : n === 10 ? "The classic hole" : n <= 15 ? "Tighter cup · light headwind" : "Tight cup · strong headwind";
+const golfLevels = window.ptcLevels("golf");
+let level = golfLevels.current(); // the level for a new round; a round keeps its own
+const KEY = (id) => "golf_key_" + id, MINE = (day, lv = level) => "golf_round_" + day + (lv === 10 ? "" : "_" + lv);
 const store = (k, v) => { try { localStorage.setItem(k, v); } catch (e) {} };
 const read = (k) => { try { return localStorage.getItem(k); } catch (e) { return null; } };
 
@@ -1963,7 +2120,8 @@ function drawAim(v) {
   ctx.strokeStyle = "#ffd666"; ctx.lineWidth = 3; ctx.beginPath(); ctx.moveTo(bx, by); ctx.lineTo(ex, ey); ctx.stroke();
   ctx.fillStyle = "#ffd666"; ctx.beginPath();
   ctx.arc(ex, ey, 4, 0, 6.2832); ctx.fill();
-  if ((course.level ?? 1) === 0) drawGuide(v, a, p);
+  const lv = course.level ?? 10;
+  if (lv < 10) drawGuide(v, a, p, lv <= 4 ? 1 : 0.4); // the whole flight, or its start
 }
 
 // Easy's aim guide: the flight until the ball first lands, worked out here
@@ -1975,13 +2133,14 @@ function groundAt(x) {
     if (x >= g[i][0] && x <= g[i + 1][0]) return g[i][1] + (g[i + 1][1] - g[i][1]) * (x - g[i][0]) / ((g[i + 1][0] - g[i][0]) || 1);
   return -99;
 }
-function drawGuide(v, a, p) {
+function drawGuide(v, a, p, part) {
   let x = ball.x, y = ball.y, vx = 26 * p / 100 * Math.cos(a), vy = 26 * p / 100 * Math.sin(a);
   ctx.fillStyle = "rgba(255,214,102,.75)";
   for (let i = 1; i <= 360; i++) {
     vy -= 9.81 / 60; vx /= 1 + 0.15 / 60; vy /= 1 + 0.15 / 60;
     x += vx / 60; y += vy / 60;
     if (i > 3 && y < groundAt(x) + course.ball_radius) break;
+    if (part < 1 && i > 360 * part * p / 100 + 20) break;
     if (i % 4 === 0) { ctx.beginPath(); ctx.arc(v.toX(x), v.toY(y), 2.2, 0, 6.2832); ctx.fill(); }
   }
 }
@@ -2021,16 +2180,16 @@ function setStatus(t, isBusy = false) { $("status").textContent = t; $("status")
 function hud() {
   if (!course) return;
   const date = new Date(course.day * 86400e3).toLocaleDateString([], { month: "short", day: "numeric", timeZone: "UTC" });
-  const lv = course.level ?? 1;
-  $("hud").innerHTML = `Hole of <b>${date}</b> · <b>${LEVELS[lv]}</b> · par <b>${course.par}</b>` + (round ? ` · strokes <b>${round.strokes}</b>` : "") +
+  const lv = course.level ?? 10;
+  $("hud").innerHTML = `Hole of <b>${date}</b> · <b>level ${lv}</b> · par <b>${course.par}</b>` + (round ? ` · strokes <b>${round.strokes}</b>` : "") +
     (course.wind ? ` · wind <b>${course.wind < 0 ? "←" : "→"} ${Math.abs(course.wind).toFixed(1)}</b>` : "");
 }
 
 function renderBoard(lb) {
-  $("lb-label").textContent = `Today's leaderboard · ${LEVELS[lb.level ?? 1]}`;
+  $("lb-label").textContent = "Today's leaderboard · highest level first";
   $("lb-stats").textContent = `${lb.played} played · ${lb.holed} holed${lb.aces ? ` · ${lb.aces} ace${lb.aces > 1 ? "s" : ""}` : ""}`;
   $("board").innerHTML = lb.top.length ? lb.top.map((e) =>
-    `<li><a href="/golf/${e.id}">${e.name}</a> <span>· ${e.strokes} stroke${e.strokes > 1 ? "s" : ""}${round && e.id === round.id ? " · you" : ""}</span></li>`).join("")
+    `<li><a href="/golf/${e.id}">${e.name}</a> <span>· L${e.level ?? 10} · ${e.strokes} stroke${e.strokes > 1 ? "s" : ""}${round && e.id === round.id ? " · you" : ""}</span></li>`).join("")
     : `<li style="list-style:none;margin-left:-22px;color:var(--muted)">Nobody has holed it yet today.</li>`;
 }
 
@@ -2079,7 +2238,7 @@ async function start() {
     round = await call("POST", "/api/golf/round", $("name").value + "\n" + level);
     key = round.key; store(KEY(round.id), key); store(MINE(round.day, round.level), String(round.id));
     history.replaceState(null, "", "/golf/" + round.id);
-    window.ptcTrack?.("golf_start", { level: LEVELS[round.level ?? 1] });
+    window.ptcTrack?.("golf_start", { level: round.level ?? 10 });
     after();
   } catch (e) { setStatus("The canister refused: " + e.message); }
   $("start").disabled = false;
@@ -2122,9 +2281,14 @@ async function shoot() {
   busy = false; $("shoot").disabled = false;
   if (round) after();
   if (finishedNow) {
-    const lv = LEVELS[round.level ?? 1];
+    const lv = round.level ?? 10;
     window.ptcTrack?.("golf_finish", { strokes: round.strokes, level: lv });
     if (round.status === "holed") window.ptcTrack?.("golf_holed", { strokes: round.strokes, level: lv });
+    // At or under par unlocks the next level.
+    if (round.status === "holed" && round.strokes <= course.par && golfLevels.unlock(lv + 1)) {
+      golfLevels.set(lv + 1); ladder.refresh();
+      setStatus(statusText() + ` 🔓 Level ${lv + 1} unlocked!`);
+    }
   }
   if (finishedNow && autoPost()) $("post-feed")?.click();
 }
@@ -2210,7 +2374,7 @@ async function load() {
   try {
     // Both at once: each is an update call, a second or two on mainnet.
     const r = m ? await call("GET", "/api/golf/round/" + m[1]) : null;
-    if (r) level = r.round.level ?? 1; // a round's leaderboard is its level's
+    if (r) level = r.round.level ?? 10;
     const t = await call("GET", "/api/golf/today?level=" + level);
     renderBoard(t.leaderboard);
     if (!m) {
@@ -2232,22 +2396,18 @@ async function load() {
     else history.replaceState(null, "", location.pathname);
   } catch (e) { setStatus("Could not reach the canister: " + e.message); }
 }
-// The level picker: the same hole, a different cup and wind, its own leaderboard.
+// The ladder: the same hole at another level, drawn before you tee off.
 function showLevel(t) {
   course = t.course; ball = { ...course.tee }; cam.x = ball.x; trail = [];
-  document.querySelectorAll("#levels button").forEach((b) => b.classList.toggle("on", +b.dataset.level === level));
   hud(); draw();
 }
-document.querySelectorAll("#levels button").forEach((b) => b.onclick = async () => {
+const ladder = window.ptcLadder($("ladder"), "golf", GOLF_LEVELS, async (n) => {
   if (round) return;
-  level = +b.dataset.level;
-  try { localStorage.setItem("ptc-golf-level", String(level)); } catch (e) {}
-  document.querySelectorAll("#levels button").forEach((x) => x.classList.toggle("on", x === b));
+  level = n;
   try {
     const mine = read(MINE(course.day));
     if (mine) { location.href = "/golf/" + mine + "#resume"; return; }
-    const t = await call("GET", "/api/golf/today?level=" + level);
-    showLevel(t); renderBoard(t.leaderboard);
+    showLevel(await call("GET", "/api/golf/today?level=" + level));
   } catch (e) { setStatus("Could not reach the canister: " + e.message); }
 });
 window.addEventListener("resize", draw);
@@ -2271,6 +2431,8 @@ static const char MINIGOLF_HTML[] = R"HTML(<!doctype html>
   }
   * { box-sizing: border-box; }
   [hidden] { display: none !important; }
+  .auto { display: flex; align-items: center; gap: 6px; font-size: 13.5px; color: var(--muted); cursor: pointer; flex-basis: 100%; }
+  .auto input { accent-color: var(--accent); width: 16px; height: 16px; }
   body { margin: 0; background: var(--bg); color: var(--text);
     font: 15px/1.45 ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif; }
   a { color: var(--accent); }
@@ -2335,6 +2497,42 @@ window.ptcTrack = (name, data) => {
   try { fetch("/api/event", { method: "POST", body: name, keepalive: true }).catch(() => {}); } catch (e) {}
   try { window.umami && window.umami.track(name, data); } catch (e) {}
 };
+// The level ladder, shared by the games: levels 1..20, unlocked one at a
+// time by winning, remembered per game in this browser.
+window.ptcLevels = (game) => {
+  const key = "ptc-" + game, get = (k, d) => { try { const v = +localStorage.getItem(key + k); return v >= 1 && v <= 20 ? v : d; } catch (e) { return d; } };
+  const put = (k, v) => { try { localStorage.setItem(key + k, String(v)); } catch (e) {} };
+  return {
+    unlocked: () => get("-unlocked", 1),
+    current: () => Math.min(get("-level", 1), get("-unlocked", 1)),
+    set: (n) => put("-level", n),
+    unlock: (n) => { if (n <= 20 && n > get("-unlocked", 1)) { put("-unlocked", n); return true; } return false; },
+  };
+};
+// Draws the ladder into `box`: ◀ Level n ▶, what the level is like, and how
+// far this browser has unlocked. onChange(n) runs when the player moves.
+window.ptcLadder = (box, game, describe, onChange) => {
+  const lv = window.ptcLevels(game);
+  box.classList.add("ladder");
+  box.innerHTML = `<button type="button" class="lv-step" data-d="-1" aria-label="Easier level">◀</button>
+    <div class="lv-mid"><b class="lv-n"></b><small class="lv-desc"></small></div>
+    <button type="button" class="lv-step" data-d="1" aria-label="Harder level">▶</button>
+    <small class="lv-unlocked"></small>`;
+  const show = (n) => {
+    box.querySelector(".lv-n").textContent = "Level " + n;
+    box.querySelector(".lv-desc").textContent = describe(n);
+    box.querySelector('[data-d="-1"]').disabled = n <= 1;
+    box.querySelector('[data-d="1"]').disabled = n >= lv.unlocked();
+    box.querySelector(".lv-unlocked").textContent = lv.unlocked() >= 20 ? "All 20 levels unlocked 🏆"
+      : `Unlocked: 1–${lv.unlocked()} · win to unlock level ${lv.unlocked() + 1} 🔒`;
+  };
+  let n = lv.current();
+  box.querySelectorAll(".lv-step").forEach((b) => b.onclick = () => {
+    n = Math.max(1, Math.min(lv.unlocked(), n + +b.dataset.d)); lv.set(n); show(n); onChange && onChange(n);
+  });
+  show(n);
+  return { level: () => n, refresh: () => { n = lv.current(); show(n); } };
+};
 try {
   if (!sessionStorage.getItem("ptc-visit")) {
     sessionStorage.setItem("ptc-visit", "1");
@@ -2345,14 +2543,14 @@ try {
 } catch (e) {}
 </script>
 <script defer src="https://cloud.umami.is/script.js" data-website-id="e9e6a912-fa89-4868-8068-7115dd8ac132" data-domains="ne5l7-xiaaa-aaaaj-qsm3q-cai.icp0.io"></script>
-<link rel="stylesheet" href="/fabric.css?v=718b5ac8e8">
-<script type="module" src="/fabric.js?v=718b5ac8e8"></script>
+<link rel="stylesheet" href="/fabric.css?v=0b37d8b5ef">
+<script type="module" src="/fabric.js?v=0b37d8b5ef"></script>
 </head>
 <body>
 <main>
   <header>
     <h1>Chain <span>Mini-Golf</span></h1>
-    <nav><a href="/">Home</a><a href="/chess">♟ Chess</a><a href="/golf">⛳ Golf</a><a href="/games">All games</a><a href="/#fuel">⛽ Fuel</a></nav>
+    <nav><a href="/">Home</a><a href="/chess">♟ Chess</a><a href="/golf">⛳ Golf</a><a href="/feed">📣 Feed</a><a href="/games">All games</a><a href="/#fuel">⛽ Fuel</a></nav>
   </header>
   <p class="sub">A 3D hole a day. Every putt is simulated by <b>Bullet Physics</b>, the C++ engine from GTA V and Red Dead Redemption,
     running inside an Internet Computer canister on 13 computers. The windmill too. Your browser only draws what the chain computed.</p>
@@ -2369,8 +2567,10 @@ try {
       <div class="panel">
         <div id="status" class="status">Loading today's hole from the canister…</div>
         <div id="setup" class="row" hidden>
+          <div id="ladder"></div>
           <input id="name" type="text" maxlength="16" placeholder="Your name (optional)" aria-label="Your name for the leaderboard">
           <button id="start" class="primary">Tee off</button>
+          <label class="auto"><input type="checkbox" id="autopost" checked> 📣 Post my result to the feed</label>
         </div>
         <div id="controls" hidden>
           <div class="aim">
@@ -2378,7 +2578,8 @@ try {
             <label for="power">Power</label><input id="power" type="range" min="1" max="100" step="0.5" value="40"><output id="power-v"></output>
           </div>
           <div class="row"><button id="shoot" class="primary">Putt</button>
-            <span class="note" style="margin:0">or drag back from the ball on the green</span></div>
+            <span class="note" style="margin:0">or drag back from the ball on the green</span>
+            <button id="restart" style="margin-left:auto">New round</button></div>
         </div>
         <div id="spectator" class="banner" hidden></div>
         <div id="share" class="share" hidden>
@@ -2386,17 +2587,19 @@ try {
           <button id="copy-btn">Copy link</button>
           <a id="share-x" target="_blank" rel="noopener">Post on X</a>
           <a id="share-wa" target="_blank" rel="noopener">WhatsApp</a>
+          <button id="post-feed" hidden>📣 Post to feed</button>
+          <button id="again" class="primary" hidden>Play again</button>
         </div>
         <dl class="kv" id="receipt" hidden></dl>
       </div>
       <div class="panel">
-        <div class="label"><span>Putts · each one can be recomputed on-chain</span><button id="verify" hidden>Recompute all on-chain</button></div>
+        <div class="label"><span>Putts · each one can be recomputed on-chain</span><button id="verify" hidden>▶ Replay on-chain</button></div>
         <div class="shots" id="shots">No putts yet.</div>
       </div>
     </div>
     <div>
       <div class="panel">
-        <div class="label"><span>Today's leaderboard</span><span id="lb-stats"></span></div>
+        <div class="label"><span>Today's leaderboard · highest level first</span><span id="lb-stats"></span></div>
         <ol class="board" id="board"></ol>
       </div>
       <p class="note">Physics runs at 120 Hz with continuous collision detection, so the ball can't slip through a wall. The
@@ -2410,7 +2613,12 @@ import * as THREE from "/three.module.min.js";
 
 const $ = (id) => document.getElementById(id);
 const fmt = (n) => n >= 1e9 ? (n / 1e9).toFixed(2) + "B" : n >= 1e6 ? (n / 1e6).toFixed(1) + "M" : n >= 1e3 ? (n / 1e3).toFixed(1) + "k" : String(n);
-const KEY = (id) => "mg_key_" + id, MINE = (day) => "mg_round_" + day;
+// Levels 1..20 of the same hole: 10 is the classic.
+const MG_LEVELS = (n) => n <= 6 ? "Forgiving cup · aim line" : n <= 9 ? "Forgiving cup" : n === 10 ? "The classic hole"
+  : n <= 13 ? "Stricter cup · faster windmill" : n <= 17 ? "Stricter cup · a bumper guards the hole" : "Strict cup · two bumpers guard the hole";
+const mgLevels = window.ptcLevels("minigolf");
+let level = mgLevels.current(); // the level for a new round; a round keeps its own
+const KEY = (id) => "mg_key_" + id, MINE = (day, lv = level) => "mg_round_" + day + (lv === 10 ? "" : "_" + lv);
 const store = (k, v) => { try { localStorage.setItem(k, v); } catch (e) {} };
 const read = (k) => { try { return localStorage.getItem(k); } catch (e) { return null; } };
 
@@ -2441,7 +2649,7 @@ sun.shadow.mapSize.set(2048, 2048);
 Object.assign(sun.shadow.camera, { left: -12, right: 12, top: 8, bottom: -8, near: 1, far: 40 });
 scene.add(sun, sun.target);
 
-let ball = null, aimArrow = null, trail = null, mills = [];
+let ball = null, aimArrow = null, guide = null, trail = null, mills = [];
 const camTarget = new THREE.Vector3(), camPos = new THREE.Vector3();
 
 function buildCourse() {
@@ -2516,6 +2724,8 @@ function buildCourse() {
   ball.castShadow = true; scene.add(ball);
   aimArrow = new THREE.ArrowHelper(new THREE.Vector3(1, 0, 0), new THREE.Vector3(), 1, 0xffd666, 0.18, 0.12);
   scene.add(aimArrow);
+  guide = new THREE.Line(new THREE.BufferGeometry(), new THREE.LineDashedMaterial({ color: 0xffd666, dashSize: 0.12, gapSize: 0.1, transparent: true, opacity: 0.8 }));
+  scene.add(guide);
   trail = new THREE.Line(new THREE.BufferGeometry(), new THREE.LineDashedMaterial({ color: 0x5ef2c8, dashSize: 0.12, gapSize: 0.1 }));
   scene.add(trail);
 }
@@ -2571,6 +2781,13 @@ function syncAim() {
   aimArrow.position.copy(ball.position);
   aimArrow.setDirection(new THREE.Vector3(Math.cos(a), 0, Math.sin(a)));
   aimArrow.setLength(0.3 + +$("power").value / 100 * 2.2, 0.18, 0.12);
+  // Low levels: where the putt would roll on a flat green, as a dotted line.
+  if (guide) {
+    const lv = (round ? round.level : course.level) ?? 10, d = 0.26 * +$("power").value;
+    guide.visible = canShoot() && lv <= 6;
+    guide.geometry.setFromPoints([ball.position.clone(), ball.position.clone().add(new THREE.Vector3(Math.cos(a) * d, 0, Math.sin(a) * d))]);
+    guide.computeLineDistances();
+  }
   if (view === "follow" && !busy) aimCamera(false);
 }
 $("yaw").oninput = syncAim; $("power").oninput = syncAim;
@@ -2613,12 +2830,12 @@ for (const [id, v] of [["v-follow", "follow"], ["v-top", "top"]]) $(id).onclick 
 function setStatus(t, isBusy = false) { $("status").textContent = t; $("status").classList.toggle("busy", isBusy); }
 function hud() {
   const date = new Date(course.day * 86400e3).toLocaleDateString([], { month: "short", day: "numeric", timeZone: "UTC" });
-  $("hud").innerHTML = `Hole of <b>${date}</b> · par <b>${course.par}</b>` + (round ? ` · strokes <b>${round.strokes}</b>` : "");
+  $("hud").innerHTML = `Hole of <b>${date}</b> · <b>level ${course.level ?? 10}</b> · par <b>${course.par}</b>` + (round ? ` · strokes <b>${round.strokes}</b>` : "");
 }
 function renderBoard(lb) {
   $("lb-stats").textContent = `${lb.played} played · ${lb.holed} holed${lb.aces ? ` · ${lb.aces} ace${lb.aces > 1 ? "s" : ""}` : ""}`;
   $("board").innerHTML = lb.top.length ? lb.top.map((e) =>
-    `<li><a href="/minigolf/${e.id}">${e.name}</a> <span>· ${e.strokes} stroke${e.strokes > 1 ? "s" : ""}${round && e.id === round.id ? " · you" : ""}</span></li>`).join("")
+    `<li><a href="/minigolf/${e.id}">${e.name}</a> <span>· L${e.level ?? 10} · ${e.strokes} stroke${e.strokes > 1 ? "s" : ""}${round && e.id === round.id ? " · you" : ""}</span></li>`).join("")
     : `<li style="list-style:none;margin-left:-22px;color:var(--muted)">Nobody has holed it yet today.</li>`;
 }
 function renderShots(checks = {}) {
@@ -2633,7 +2850,7 @@ function statusText() {
   if (round.status === "holed") return round.strokes === 1 ? "Hole in one! The chain saw it." : `In the cup in ${round.strokes}.`;
   if (round.status === "gave_up") return "Out of putts for this round.";
   if (!key) return `${round.name}'s round · ${round.strokes} stroke${round.strokes === 1 ? "" : "s"} so far`;
-  return round.shots.length ? "Line up the next putt." : "Aim, then putt. The canister will simulate it.";
+  return round.shots.length ? `Putt ${round.shots.length + 1}: you play from where your ball stopped.` : "Aim, then putt. The canister will simulate it.";
 }
 function after() {
   placeBall(round.ball);
@@ -2643,6 +2860,9 @@ function after() {
   $("controls").hidden = !canShoot();
   $("setup").hidden = true;
   $("share").hidden = !round.shots.length;
+  const done = round.status !== "playing";
+  $("again").hidden = !(key && done);
+  if ($("post-feed")) $("post-feed").hidden = !(key && done);
   updateShare(); renderShots(); hud(); syncAim(); aimCamera(false);
   if (round.status !== "playing") call("GET", "/api/minigolf/today").then((t) => renderBoard(t.leaderboard)).catch(() => {});
 }
@@ -2673,10 +2893,10 @@ async function start() {
   $("start").disabled = true;
   setStatus("Creating your round on-chain…", true);
   try {
-    round = await call("POST", "/api/minigolf/round", $("name").value);
-    key = round.key; store(KEY(round.id), key); store(MINE(round.day), String(round.id));
+    round = await call("POST", "/api/minigolf/round", $("name").value + "\n" + level);
+    key = round.key; store(KEY(round.id), key); store(MINE(round.day, round.level), String(round.id));
     history.replaceState(null, "", "/minigolf/" + round.id);
-    window.ptcTrack?.("mg_start");
+    window.ptcTrack?.("mg_start", { level: round.level });
     after();
   } catch (e) { setStatus("The canister refused: " + e.message); }
   $("start").disabled = false;
@@ -2694,7 +2914,8 @@ async function shoot() {
     window.Fabric?.consensus();
     await animate(r.frames, phase);
     round = r.round;
-    if (round.status !== "playing") window.ptcTrack?.("mg_finish", { strokes: round.strokes });
+    var finishedNow = round.status !== "playing";
+    if (finishedNow) window.ptcTrack?.("mg_finish", { strokes: round.strokes, level: round.level });
     const s = round.shots[round.shots.length - 1];
     $("receipt").hidden = false;
     $("receipt").innerHTML = `<dt>putt</dt><dd>${s.yaw.toFixed(1)}° · ${s.power.toFixed(0)}% · ${s.how}</dd>
@@ -2705,25 +2926,62 @@ async function shoot() {
   } catch (e) { $("thinking").hidden = true; window.Fabric?.think(false); setStatus("The canister refused: " + e.message); }
   busy = false; $("shoot").disabled = false;
   if (round) after();
+  if (finishedNow) {
+    // At or under par unlocks the next level.
+    if (round.status === "holed" && round.strokes <= course.par && mgLevels.unlock(round.level + 1)) {
+      mgLevels.set(round.level + 1);
+      setStatus(statusText() + ` 🔓 Level ${round.level + 1} unlocked!`);
+    }
+    if (autoPost()) $("post-feed")?.click();
+  }
 }
 $("shoot").onclick = shoot;
 $("start").onclick = start;
+// Your round for today is remembered in this browser; this starts a fresh one.
+$("again").onclick = $("restart").onclick = () => {
+  try { localStorage.removeItem(MINE(course.day, round ? round.level : level)); } catch (e) {}
+  location.href = "/minigolf";
+};
 
-$("verify").onclick = async () => {
-  $("verify").disabled = true;
+// Finished results go to the feed unless the player unticks this.
+const autoPost = () => $("autopost").checked;
+try { $("autopost").checked = localStorage.getItem("ptc-autopost") !== "0"; } catch (e) {}
+$("autopost").onchange = () => { try { localStorage.setItem("ptc-autopost", autoPost() ? "1" : "0"); } catch (e) {} };
+$("post-feed").onclick = async () => {
+  const b = $("post-feed");
+  if (!b) return;
+  b.disabled = true; b.textContent = "Posting…";
+  try {
+    await call("POST", "/api/feed", `minigolf\n${round.id}\n${key}\n`);
+    b.outerHTML = `<a href="/feed">📣 Posted · see the feed ▸</a>`;
+    window.ptcTrack?.("feed_post", { kind: "minigolf" });
+  } catch (e) { b.disabled = false; b.textContent = "📣 Post to feed"; setStatus("Could not post: " + e.message); }
+};
+
+// The replay: the canister simulates every putt again, from the tee, and
+// says whether each ends exactly where the round says it did.
+async function replay() {
+  $("verify").disabled = true; busy = true; $("controls").hidden = true;
   const checks = {};
+  placeBall(course.tee);
   for (let i = 0; i < round.shots.length; i++) {
     checks[i] = "…"; renderShots(checks);
+    setStatus(`Replaying putt ${i + 1} of ${round.shots.length}: the canister is simulating it again…`, true);
     try {
+      window.Fabric?.think(true);
       const r = await call("GET", `/api/minigolf/round/${round.id}/shot/${i}`);
+      window.Fabric?.consensus();
       await animate(r.frames, round.shots[i].phase);
       checks[i] = r.matches;
-    } catch (e) { setStatus("Recompute failed: " + e.message); break; }
+    } catch (e) { window.Fabric?.think(false); setStatus("Replay failed: " + e.message); break; }
     renderShots(checks);
   }
-  placeBall(round.ball); setMills(round.next_phase, 0);
-  $("verify").disabled = false;
-};
+  busy = false; $("verify").disabled = false;
+  const ok = round.shots.every((_, i) => checks[i] === true);
+  after(); renderShots(checks);
+  if (ok) setStatus(statusText().replace(/\.?$/, ".") + " Replayed on-chain: every putt ended exactly where it did the first time.");
+}
+$("verify").onclick = replay;
 
 // ---------- share ----------
 const shareUrl = () => location.origin + "/minigolf/" + round.id;
@@ -2749,25 +3007,32 @@ async function load() {
   const m = location.pathname.match(/^\/minigolf\/(\d+)$/);
   try {
     // Both at once: each is an update call, a second or two on mainnet.
-    const [t, r] = await Promise.all([call("GET", "/api/minigolf/today"), m ? call("GET", "/api/minigolf/round/" + m[1]) : null]);
+    const r = m ? await call("GET", "/api/minigolf/round/" + m[1]) : null;
+    if (r) level = r.round.level ?? 10;
+    const t = await call("GET", "/api/minigolf/today?level=" + level);
     renderBoard(t.leaderboard);
     course = r ? r.course : t.course;
     buildCourse();
     if (!m) {
       const mine = read(MINE(course.day));
-      if (mine) { location.replace("/minigolf/" + mine); return; }
+      if (mine) { location.replace("/minigolf/" + mine + "#resume"); return; }
       placeBall(course.tee); setMills(0, 0);
       $("yaw").value = 0; syncAim(); aimCamera(true); hud();
-      $("setup").hidden = false; setStatus("Today's hole is ready. Press Tee off.");
+      // Another level is another course: load it fresh.
+      window.ptcLadder($("ladder"), "minigolf", MG_LEVELS, () => location.reload());
+      $("setup").hidden = false; setStatus("Today's hole is ready. Pick a level, then press Tee off.");
       return;
     }
     round = r.round; key = read(KEY(round.id));
     if (!key || round.day !== t.course.day) {
       key = null;
       $("spectator").hidden = false;
-      $("spectator").innerHTML = `You're watching ${round.name}'s round. Press <b>Recompute all on-chain</b> to have the canister simulate every putt again. <a href="/minigolf">Play today's hole</a>.`;
+      $("spectator").innerHTML = `You're watching ${round.name}'s round, replayed by the canister: it simulates every putt again. <a href="/minigolf">Play today's hole</a>.`;
     }
     after(); aimCamera(true);
+    // A shared link replays the round; coming back to your own round resumes it.
+    if (location.hash !== "#resume" && round.shots.length) replay();
+    else history.replaceState(null, "", location.pathname);
   } catch (e) { setStatus("Could not reach the canister: " + e.message); }
 }
 window.addEventListener("resize", resize);
@@ -2841,6 +3106,42 @@ window.ptcTrack = (name, data) => {
   try { fetch("/api/event", { method: "POST", body: name, keepalive: true }).catch(() => {}); } catch (e) {}
   try { window.umami && window.umami.track(name, data); } catch (e) {}
 };
+// The level ladder, shared by the games: levels 1..20, unlocked one at a
+// time by winning, remembered per game in this browser.
+window.ptcLevels = (game) => {
+  const key = "ptc-" + game, get = (k, d) => { try { const v = +localStorage.getItem(key + k); return v >= 1 && v <= 20 ? v : d; } catch (e) { return d; } };
+  const put = (k, v) => { try { localStorage.setItem(key + k, String(v)); } catch (e) {} };
+  return {
+    unlocked: () => get("-unlocked", 1),
+    current: () => Math.min(get("-level", 1), get("-unlocked", 1)),
+    set: (n) => put("-level", n),
+    unlock: (n) => { if (n <= 20 && n > get("-unlocked", 1)) { put("-unlocked", n); return true; } return false; },
+  };
+};
+// Draws the ladder into `box`: ◀ Level n ▶, what the level is like, and how
+// far this browser has unlocked. onChange(n) runs when the player moves.
+window.ptcLadder = (box, game, describe, onChange) => {
+  const lv = window.ptcLevels(game);
+  box.classList.add("ladder");
+  box.innerHTML = `<button type="button" class="lv-step" data-d="-1" aria-label="Easier level">◀</button>
+    <div class="lv-mid"><b class="lv-n"></b><small class="lv-desc"></small></div>
+    <button type="button" class="lv-step" data-d="1" aria-label="Harder level">▶</button>
+    <small class="lv-unlocked"></small>`;
+  const show = (n) => {
+    box.querySelector(".lv-n").textContent = "Level " + n;
+    box.querySelector(".lv-desc").textContent = describe(n);
+    box.querySelector('[data-d="-1"]').disabled = n <= 1;
+    box.querySelector('[data-d="1"]').disabled = n >= lv.unlocked();
+    box.querySelector(".lv-unlocked").textContent = lv.unlocked() >= 20 ? "All 20 levels unlocked 🏆"
+      : `Unlocked: 1–${lv.unlocked()} · win to unlock level ${lv.unlocked() + 1} 🔒`;
+  };
+  let n = lv.current();
+  box.querySelectorAll(".lv-step").forEach((b) => b.onclick = () => {
+    n = Math.max(1, Math.min(lv.unlocked(), n + +b.dataset.d)); lv.set(n); show(n); onChange && onChange(n);
+  });
+  show(n);
+  return { level: () => n, refresh: () => { n = lv.current(); show(n); } };
+};
 try {
   if (!sessionStorage.getItem("ptc-visit")) {
     sessionStorage.setItem("ptc-visit", "1");
@@ -2851,14 +3152,14 @@ try {
 } catch (e) {}
 </script>
 <script defer src="https://cloud.umami.is/script.js" data-website-id="e9e6a912-fa89-4868-8068-7115dd8ac132" data-domains="ne5l7-xiaaa-aaaaj-qsm3q-cai.icp0.io"></script>
-<link rel="stylesheet" href="/fabric.css?v=718b5ac8e8">
-<script type="module" src="/fabric.js?v=718b5ac8e8"></script>
+<link rel="stylesheet" href="/fabric.css?v=0b37d8b5ef">
+<script type="module" src="/fabric.js?v=0b37d8b5ef"></script>
 </head>
 <body>
 <main>
   <header>
     <h1>The <span>feed</span></h1>
-    <nav><a href="/">Home</a><a href="/chess">♟ Chess</a><a href="/golf">⛳ Golf</a><a href="/games">All games</a></nav>
+    <nav><a href="/">Home</a><a href="/chess">♟ Chess</a><a href="/golf">⛳ Golf</a><a href="/minigolf">🏌 3D</a><a href="/games">All games</a></nav>
   </header>
   <p class="sub">Results players posted, straight from the chain. Every one was computed by 13 computers, so nobody can fake a score.
     Finish a round or a game, then press <b>Post to feed</b>.</p>
@@ -2875,7 +3176,7 @@ async function call(method, path, body) {
   if (!res.ok) throw new Error(data.error || "HTTP " + res.status);
   return data;
 }
-const ICON = { golf: "⛳", chess: "♟", fuel: "⛽" };
+const ICON = { golf: "⛳", minigolf: "🏌", chess: "♟", fuel: "⛽" };
 const EMOJI = ["🔥", "👏", "😮"];
 const ago = (ns) => {
   const s = Math.max(0, (Date.now() - ns / 1e6) / 1000);

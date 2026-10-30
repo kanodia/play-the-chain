@@ -22,8 +22,13 @@ struct MgObstacle {
   float omega = 0; // Windmill, rad/s about y
 };
 
+// Levels 1..20 of the same daily hole, as in Chain Golf: 10 is the classic.
+constexpr int MG_CLASSIC = 10, MG_MAX_LEVEL = 20;
+
 struct MgCourse {
   uint32_t day = 0;
+  int level = MG_CLASSIC;
+  float catch_speed = 0.6f; // the cup holds a ball slower than this, m/s
   int nx = 0, nz = 0;  // grid cells
   float cell = 0.25f;  // metres per cell
   std::vector<float> heights; // (nx + 1) * (nz + 1), row by row along x
@@ -51,7 +56,9 @@ constexpr float MG_BALL_RADIUS = 0.06f;
 constexpr float MG_MAX_POWER = 100.0f;
 constexpr int MG_STEPS_PER_FRAME = 4; // 120 Hz physics, 30 frames a second
 
-MgCourse mg_course(uint32_t day);
+// Below level 10 the cup holds faster balls; above it only slower ones, the
+// windmill turns faster, and from level 14 bumpers guard the cup.
+MgCourse mg_course(uint32_t day, int level = MG_CLASSIC);
 
 // The windmills' angle at the start of a shot: fixed by the day and the
 // stroke, so a replay sees exactly the same blades.

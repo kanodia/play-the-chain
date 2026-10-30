@@ -80,3 +80,13 @@ main { animation: none; }
   .fabric-badge { transition: none; }
   ::view-transition-old(root), ::view-transition-new(root) { animation: none; }
 }
+
+/* The level ladder (ptcLadder, in every page's head). */
+.ladder { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 6px 10px; align-items: center; flex-basis: 100%;
+  background: rgba(94, 242, 200, .06); border: 1px solid rgba(94, 242, 200, .22); border-radius: 12px; padding: 8px 10px; }
+.ladder .lv-step { font-size: 18px; padding: 6px 12px; }
+.ladder .lv-mid { text-align: center; }
+.ladder .lv-n { display: block; font-size: 18px; }
+.ladder .lv-desc { display: block; color: var(--muted, #8b93a7); font-size: 12.5px; }
+.ladder .lv-unlocked { grid-column: 1 / -1; text-align: center; color: var(--muted, #8b93a7); font-size: 12px; }
+.unlocked-note { color: #9ff8de; font-weight: 600; }

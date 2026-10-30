@@ -216,11 +216,20 @@ static const char *status_text(GameStatus s) {
 }
 
 // The name of a game's level, from its search settings.
-static const char *level_name(const Game &g) {
-  if (g.blunder >= 30) return "Beginner";
-  if (g.blunder > 0 || g.skill <= 2) return "Easy";
-  if (g.skill <= 12) return "Club";
-  return g.depth >= 18 ? "Full" : g.depth >= 14 ? "Strong" : "Casual";
+static std::string level_name(const Game &g) {
+  if (g.level) return "level " + std::to_string(g.level);
+  return g.depth >= 18 ? "Full" : g.depth >= 14 ? "Strong" : "Casual"; // games from before levels
+}
+
+// Chess levels 1..20: random moves first (60% at level 1, none from 10),
+// then Stockfish's Skill Level, then full strength at depth 18.
+struct ChessLevel { int depth, skill, blunder; };
+static ChessLevel chess_level(int level) {
+  if (level <= 9) return {level <= 8 ? 1 : 3, 0, level <= 8 ? 60 - 7 * (level - 1) : 5};
+  if (level == 10) return {3, 0, 0};
+  if (level == 20) return {18, 20, 0};
+  int skill = 2 * (level - 10);                         // 2..18
+  return {std::min(14, 2 * (level - 10) + 2), skill, 0}; // depth 4..14
 }
 
 static std::string game_json(const Game &g, bool with_key) {
@@ -228,7 +237,7 @@ static std::string game_json(const Game &g, bool with_key) {
   std::string out = "{\"id\":" + std::to_string(g.id) +
                     ",\"depth\":" + std::to_string(g.depth) +
                     ",\"skill\":" + std::to_string(g.skill) + ",\"blunder\":" + std::to_string(g.blunder) +
-                    ",\"level\":\"" + level_name(g) + "\"" +
+                    ",\"level\":\"" + level_name(g) + "\",\"level_n\":" + std::to_string(g.level) +
                     ",\"human\":\"" + std::string(1, g.human) + "\"" +
                     ",\"created_ns\":" + std::to_string(g.created_ns) +
                     ",\"fen\":\"" + st.fen + "\"" + ",\"status\":\"" +
@@ -396,7 +405,7 @@ static IC_HttpResponse api_games(IC_API &ic_api) {
     out += "{\"id\":" + std::to_string(g.id) +
            ",\"depth\":" + std::to_string(g.depth) +
            ",\"skill\":" + std::to_string(g.skill) + ",\"blunder\":" + std::to_string(g.blunder) +
-                    ",\"level\":\"" + level_name(g) + "\"" +
+                    ",\"level\":\"" + level_name(g) + "\",\"level_n\":" + std::to_string(g.level) +
            ",\"human\":\"" + std::string(1, g.human) + "\"" +
            ",\"created_ns\":" + std::to_string(g.created_ns) +
            ",\"last_ns\":" + std::to_string(last_ns) +
@@ -412,7 +421,8 @@ static IC_HttpResponse api_games(IC_API &ic_api) {
 }
 
 static IC_HttpResponse api_new_game(IC_API &ic_api, const std::string &body) {
-  // "<depth>\n<w|b>" or, with a level, "<depth>\n<w|b>\n<skill 0-20>".
+  // "<depth>\n<w|b>", "<depth>\n<w|b>\n<skill>\n<blunder %>", or a level:
+  // "L<1-20>\n<w|b>", the canister picking the settings.
   std::istringstream in(body);
   std::string depth_text, side, skill_text, blunder_text;
   std::getline(in, depth_text);
@@ -420,6 +430,15 @@ static IC_HttpResponse api_new_game(IC_API &ic_api, const std::string &body) {
   std::getline(in, skill_text);
   std::getline(in, blunder_text);
   int blunder = std::atoi(blunder_text.c_str());
+  int level = 0;
+  if (!depth_text.empty() && depth_text[0] == 'L') {
+    level = std::atoi(depth_text.c_str() + 1);
+    if (level < 1 || level > 20) return error(400, "level is 1 to 20");
+    ChessLevel c = chess_level(level);
+    depth_text = std::to_string(c.depth);
+    skill_text = std::to_string(c.skill);
+    blunder = c.blunder;
+  }
   int depth = std::atoi(depth_text.c_str());
   char human = side.empty() ? 'w' : side[0];
   int skill = skill_text.empty() ? 20 : std::atoi(skill_text.c_str());
@@ -432,6 +451,7 @@ static IC_HttpResponse api_new_game(IC_API &ic_api, const std::string &body) {
   ++g_games_today;
 
   Game g = game_new(depth, human, IC_API::time(), skill, blunder);
+  g.level = level;
   if (g.engine_to_move()) engine_reply(g);
   game_save(g);
   return json(game_json(g, true));
@@ -494,11 +514,19 @@ static uint32_t golf_today() {
   return static_cast<uint32_t>(IC_API::time() / 86'400'000'000'000ULL);
 }
 
-// ?level=0|1|2 in a URL; Normal when absent.
+// ?level=1..20 in a URL; the classic level 10 when absent.
 static int level_param(const std::string &url) {
   size_t q = url.find("level=");
-  int level = q == std::string::npos ? GOLF_NORMAL : std::atoi(url.c_str() + q + 6);
-  return level >= GOLF_EASY && level <= GOLF_PRO ? level : GOLF_NORMAL;
+  int level = q == std::string::npos ? GOLF_CLASSIC : std::atoi(url.c_str() + q + 6);
+  return level >= 1 && level <= GOLF_MAX_LEVEL ? level : GOLF_CLASSIC;
+}
+
+// "<name>" or "<name>\n<level 1-20>": the level, or 0 if it's not one.
+static int body_level(const std::string &body) {
+  size_t nl = body.find('\n');
+  if (nl == std::string::npos) return GOLF_CLASSIC;
+  int level = std::atoi(body.c_str() + nl + 1);
+  return level >= 1 && level <= GOLF_MAX_LEVEL ? level : 0;
 }
 
 static IC_HttpResponse api_golf_today(const std::string &url) {
@@ -506,7 +534,7 @@ static IC_HttpResponse api_golf_today(const std::string &url) {
   uint32_t day = golf_today();
   int level = level_param(url);
   return json("{\"course\":" + golf_course_json(golf_course(day, true, level)) +
-              ",\"leaderboard\":" + golf_leaderboard_json(day, level) + "}");
+              ",\"leaderboard\":" + golf_leaderboard_json(day) + "}");
 }
 
 static IC_HttpResponse api_golf_new(IC_API &ic_api, const std::string &body) {
@@ -515,11 +543,9 @@ static IC_HttpResponse api_golf_new(IC_API &ic_api, const std::string &body) {
   if (out_of_fuel(ic_api)) return error(503, OUT_OF_FUEL);
   ++g_golf_today;
   uint32_t day = golf_today();
-  // "<name>" or "<name>\n<level 0-2>"
-  size_t nl = body.find('\n');
-  int level = nl == std::string::npos ? GOLF_NORMAL : std::atoi(body.c_str() + nl + 1);
-  if (level < GOLF_EASY || level > GOLF_PRO) return error(400, "level is 0, 1 or 2");
-  GolfRound r = golf_round_new(day, body.substr(0, nl), IC_API::time(), level);
+  int level = body_level(body);
+  if (!level) return error(400, "level is 1 to 20");
+  GolfRound r = golf_round_new(day, body.substr(0, body.find('\n')), IC_API::time(), level);
   golf_round_save(r);
   return json(golf_round_json(r, golf_round_course(r), true));
 }
@@ -591,10 +617,11 @@ static IC_HttpResponse api_golf_replay(IC_API &ic_api, uint64_t id, size_t n) {
 // Chain Mini-Golf: the same, in 3D, with Bullet Physics. Windmill blades start
 // each putt at an angle fixed by the day and the stroke number.
 
-static IC_HttpResponse api_mg_today() {
+static IC_HttpResponse api_mg_today(const std::string &url) {
   roll_day();
   uint32_t day = golf_today();
-  return json("{\"course\":" + mg_course_json(mg_course(day)) +
+  int level = level_param(url);
+  return json("{\"course\":" + mg_course_json(mg_course(day, level)) +
               ",\"leaderboard\":" + mg_leaderboard_json(day) + "}");
 }
 
@@ -604,9 +631,11 @@ static IC_HttpResponse api_mg_new(IC_API &ic_api, const std::string &body) {
   if (out_of_fuel(ic_api)) return error(503, OUT_OF_FUEL);
   ++g_mg_today;
   uint32_t day = golf_today();
-  MgRound r = mg_round_new(day, body, IC_API::time());
+  int level = body_level(body);
+  if (!level) return error(400, "level is 1 to 20");
+  MgRound r = mg_round_new(day, body.substr(0, body.find('\n')), IC_API::time(), level);
   mg_round_save(r);
-  return json(mg_round_json(r, mg_course(day), true));
+  return json(mg_round_json(r, mg_round_course(r), true));
 }
 
 static IC_HttpResponse api_mg_shot(IC_API &ic_api, uint64_t id, const std::string &body) {
@@ -629,7 +658,7 @@ static IC_HttpResponse api_mg_shot(IC_API &ic_api, uint64_t id, const std::strin
     return error(429, "today's on-chain budget is used up, back at 00:00 UTC");
   if (out_of_fuel(ic_api)) return error(503, OUT_OF_FUEL);
 
-  MgCourse course = mg_course(r.day);
+  MgCourse course = mg_round_course(r);
   float phase = mg_phase(r.day, r.shots.size());
   uint64_t start = instructions();
   MgShot res = mg_shoot(course, r.ball(course), yaw, power, phase);
@@ -644,7 +673,7 @@ static IC_HttpResponse api_mg_shot(IC_API &ic_api, uint64_t id, const std::strin
 static IC_HttpResponse api_mg_round(uint64_t id) {
   MgRound r;
   if (!mg_round_load(id, r)) return error(404, "no such round");
-  MgCourse course = mg_course(r.day);
+  MgCourse course = mg_round_course(r);
   return json("{\"round\":" + mg_round_json(r, course, false) +
               ",\"course\":" + mg_course_json(course) + "}");
 }
@@ -656,7 +685,7 @@ static IC_HttpResponse api_mg_replay(IC_API &ic_api, uint64_t id, size_t n) {
   if (!budget_left())
     return error(429, "today's on-chain budget is used up, back at 00:00 UTC");
   if (out_of_fuel(ic_api)) return error(503, OUT_OF_FUEL);
-  MgCourse course = mg_course(r.day);
+  MgCourse course = mg_round_course(r);
   MgRound before = r;
   before.shots.resize(n);
   const MgStroke &s = r.shots[n];
@@ -752,9 +781,8 @@ static bool feed_story(const FeedPost &p, std::string &title, std::string &sub, 
     if (!golf_round_load(p.ref, r)) return false;
     GolfCourse c = golf_round_course(r);
     int n = r.strokes();
-    std::string lv = golf_level_name(r.level);
-    std::string hole = (r.day == golf_today() ? "today's " : "the " + day_text(r.day) + " ") +
-                       (lv.empty() ? "" : lv + " ") + "hole";
+    std::string hole = (r.day == golf_today() ? "today's hole" : "the " + day_text(r.day) + " hole") +
+                       " at level " + std::to_string(r.level);
     title = r.holed() ? (n == 1 ? who + " made a hole-in-one \xE2\x9B\xB3"
                                 : who + " holed " + hole + " in " + std::to_string(n) +
                                       (n <= c.par ? " \xE2\x9B\xB3" : ""))
@@ -762,6 +790,20 @@ static bool feed_story(const FeedPost &p, std::string &title, std::string &sub, 
     sub = "Chain Golf \xC2\xB7 " + std::to_string(r.shots.size()) +
           (r.shots.size() == 1 ? " shot" : " shots") + ", each simulated by Box2D on 13 nodes";
     url = "/golf/" + std::to_string(p.ref);
+    return true;
+  }
+  if (p.kind == "minigolf") {
+    MgRound r;
+    if (!mg_round_load(p.ref, r)) return false;
+    int n = r.strokes();
+    std::string hole = (r.day == golf_today() ? "today's 3D hole" : "the " + day_text(r.day) + " 3D hole") +
+                       " at level " + std::to_string(r.level);
+    title = r.holed() ? (n == 1 ? who + " aced " + hole + " \xF0\x9F\x8F\x8C"
+                                : who + " holed " + hole + " in " + std::to_string(n))
+                      : who + " took " + std::to_string(n) + " strokes on " + hole + " and missed the cup";
+    sub = "Chain Mini-Golf \xC2\xB7 " + std::to_string(r.shots.size()) +
+          (r.shots.size() == 1 ? " putt" : " putts") + ", each simulated by Bullet on 13 nodes";
+    url = "/minigolf/" + std::to_string(p.ref);
     return true;
   }
   if (p.kind == "chess") {
@@ -775,12 +817,12 @@ static bool feed_story(const FeedPost &p, std::string &title, std::string &sub, 
     std::string level = level_name(g);
     if (st.status == GameStatus::Checkmate && !g.plies.empty())
       title = g.plies.back().by_engine ? "Stockfish (" + level + ") beat " + who + " in " + m
-                                       : who + " beat Stockfish on " + level + "! \xF0\x9F\xA4\xAF";
+                                       : who + " beat Stockfish at " + level + "! \xF0\x9F\xA4\xAF";
     else if (st.status != GameStatus::Playing)
       title = who + " drew with Stockfish (" + level + ") in " + m;
     else
       title = who + " has lasted " + m + " against Stockfish (" + level + ")";
-    sub = level + " level \xC2\xB7 " + who + " played " +
+    sub = (g.level ? "Level " + std::to_string(g.level) : level + " level") + " \xC2\xB7 " + who + " played " +
           (g.human == 'w' ? "white" : "black") + " \xC2\xB7 " + short_number(nodes) +
           " positions searched on-chain";
     url = "/game/" + std::to_string(p.ref);
@@ -851,6 +893,12 @@ static IC_HttpResponse api_feed_post(IC_API &ic_api, const std::string &body) {
     if (key != r.key) return error(403, "only the player can post this round");
     if (!r.finished()) return error(409, "finish the round first");
     if (name.empty()) name = r.name;
+  } else if (kind == "minigolf") {
+    MgRound r;
+    if (!ref || !mg_round_load(ref, r)) return error(404, "no such round");
+    if (key != r.key) return error(403, "only the player can post this round");
+    if (!r.finished()) return error(409, "finish the round first");
+    if (name.empty()) name = r.name;
   } else if (kind == "chess") {
     Game g;
     if (!ref || !game_load(ref, g)) return error(404, "no such game");
@@ -858,7 +906,7 @@ static IC_HttpResponse api_feed_post(IC_API &ic_api, const std::string &body) {
     if (engine_game_state(g.moves()).status == GameStatus::Playing && g.plies.size() < 10)
       return error(409, "play a few more moves first");
   } else {
-    return error(400, "send golf or chess");
+    return error(400, "send golf, minigolf or chess");
   }
   uint64_t id = feed_posted(kind, ref);
   FeedPost p;
@@ -1001,7 +1049,7 @@ static Preview golf_preview(uint64_t id) {
   if (!id || !golf_round_load(id, r)) return {"Chain Golf: one hole a day. Can you sink it?", GOLF_DESC, "golf"};
   std::string who = r.name == "anon" ? "Someone" : r.name;
   int n = r.strokes();
-  std::string lv = golf_level_name(r.level), on = lv.empty() ? "" : " (" + lv + ")";
+  std::string on = " (level " + std::to_string(r.level) + ")";
   std::string title = r.holed() ? (n == 1 ? who + " made a hole-in-one on Chain Golf" + on
                                           : who + " holed today's Chain Golf" + on + " in " + std::to_string(n))
                                  : who + "'s round on Chain Golf" + on + ": " + std::to_string(n) + " strokes";
@@ -1096,7 +1144,7 @@ static IC_Async http_request_update_async() {
     response = api_test_mg_best(body);
 #endif
   } else if (method == "GET" && path == "/api/minigolf/today") {
-    response = api_mg_today();
+    response = api_mg_today(request.url);
   } else if (method == "POST" && path == "/api/minigolf/round") {
     response = api_mg_new(ic_api, body);
   } else if (parse_id(path, "/api/minigolf/round/", id, rest)) {

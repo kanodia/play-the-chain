@@ -54,8 +54,12 @@ bool GolfRound::drilled() const { return id >= drilled_from(); }
 
 GolfCourse golf_round_course(const GolfRound &r) { return golf_course(r.day, r.drilled(), r.level); }
 
-const char *golf_level_name(int level) {
-  return level == GOLF_EASY ? "Easy" : level == GOLF_PRO ? "Pro" : "";
+int golf_take_level(std::string &line) {
+  if (line.size() < 2 || line[0] != '#') return GOLF_CLASSIC;
+  size_t end = line.find(' ');
+  int level = std::atoi(line.substr(1, end - 1).c_str());
+  line.erase(0, end == std::string::npos ? line.size() : end + 1);
+  return level >= 1 && level <= GOLF_MAX_LEVEL ? level : GOLF_CLASSIC;
 }
 
 static uint64_t rounds_count();
@@ -114,7 +118,7 @@ GolfRound golf_round_new(uint32_t day, const std::string &name, uint64_t now_ns,
 void golf_round_save(const GolfRound &r) {
   std::ofstream file(round_path(r.id), std::ios::trunc);
   file << r.key << ' ' << r.day << ' ' << r.created_ns << ' ';
-  if (r.level != GOLF_NORMAL) file << '#' << r.level << ' ';
+  if (r.level != GOLF_CLASSIC) file << '#' << r.level << ' ';
   file << r.name << '\n';
   for (const GolfShot &s : r.shots)
     file << bits(s.angle) << ' ' << bits(s.power) << ' ' << bits(s.end.x) << ' '
@@ -133,10 +137,7 @@ bool golf_round_load(uint64_t id, GolfRound &r) {
   file >> r.key >> r.day >> r.created_ns;
   std::getline(file, r.name);
   if (!r.name.empty() && r.name.front() == ' ') r.name.erase(r.name.begin());
-  if (r.name.size() >= 2 && r.name[0] == '#' && r.name[1] >= '0' && r.name[1] <= '2') {
-    r.level = r.name[1] - '0';
-    r.name.erase(0, r.name.size() > 2 ? 3 : 2);
-  }
+  r.level = golf_take_level(r.name);
   std::string line;
   while (std::getline(file, line)) {
     std::istringstream in(line);
@@ -199,25 +200,27 @@ std::string golf_round_json(const GolfRound &r, const GolfCourse &c, bool with_k
 }
 
 // Today's best holed rounds: fewest strokes, then the earliest.
-std::string golf_leaderboard_json(uint32_t day, int level) {
-  struct Entry { uint64_t id; std::string name; int strokes; uint64_t created_ns; };
+std::string golf_leaderboard_json(uint32_t day) {
+  struct Entry { uint64_t id; std::string name; int strokes; uint64_t created_ns; int level; };
   std::vector<Entry> holed;
   size_t played = 0, aces = 0;
   for (uint64_t id : golf_day_rounds(day)) {
     GolfRound r;
-    if (!golf_round_load(id, r) || r.shots.empty() || r.level != level) continue;
+    if (!golf_round_load(id, r) || r.shots.empty()) continue;
     ++played;
     if (!r.holed()) continue;
     if (r.strokes() == 1) ++aces;
-    holed.push_back({r.id, r.name, r.strokes(), r.created_ns});
+    holed.push_back({r.id, r.name, r.strokes(), r.created_ns, r.level});
   }
   std::sort(holed.begin(), holed.end(), [](const Entry &a, const Entry &b) {
+    if (a.level != b.level) return a.level > b.level;
     return a.strokes != b.strokes ? a.strokes < b.strokes : a.created_ns < b.created_ns;
   });
-  std::string out = "{\"level\":" + std::to_string(level) + ",\"played\":" + std::to_string(played) + ",\"holed\":" +
+  std::string out = "{\"played\":" + std::to_string(played) + ",\"holed\":" +
                     std::to_string(holed.size()) + ",\"aces\":" + std::to_string(aces) + ",\"top\":[";
   for (size_t i = 0; i < holed.size() && i < 20; ++i)
     out += std::string(i ? "," : "") + "{\"id\":" + std::to_string(holed[i].id) + ",\"name\":\"" +
-           holed[i].name + "\",\"strokes\":" + std::to_string(holed[i].strokes) + "}";
+           holed[i].name + "\",\"strokes\":" + std::to_string(holed[i].strokes) +
+           ",\"level\":" + std::to_string(holed[i].level) + "}";
   return out + "]}";
 }
