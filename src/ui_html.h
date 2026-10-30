@@ -490,6 +490,7 @@ try {
   }
 } catch (e) {}
 </script>
+<script defer src="https://cloud.umami.is/script.js" data-website-id="e9e6a912-fa89-4868-8068-7115dd8ac132" data-domains="ne5l7-xiaaa-aaaaj-qsm3q-cai.icp0.io"></script>
 <link rel="stylesheet" href="/fabric.css?v=718b5ac8e8">
 <script type="module" src="/fabric.js?v=718b5ac8e8"></script>
 </head>
@@ -886,6 +887,7 @@ try {
   }
 } catch (e) {}
 </script>
+<script defer src="https://cloud.umami.is/script.js" data-website-id="e9e6a912-fa89-4868-8068-7115dd8ac132" data-domains="ne5l7-xiaaa-aaaaj-qsm3q-cai.icp0.io"></script>
 <link rel="stylesheet" href="/fabric.css?v=718b5ac8e8">
 <script type="module" src="/fabric.js?v=718b5ac8e8"></script>
 </head>
@@ -1516,6 +1518,7 @@ try {
   }
 } catch (e) {}
 </script>
+<script defer src="https://cloud.umami.is/script.js" data-website-id="e9e6a912-fa89-4868-8068-7115dd8ac132" data-domains="ne5l7-xiaaa-aaaaj-qsm3q-cai.icp0.io"></script>
 <link rel="stylesheet" href="/fabric.css?v=718b5ac8e8">
 <script type="module" src="/fabric.js?v=718b5ac8e8"></script>
 </head>
@@ -1796,6 +1799,7 @@ try {
   }
 } catch (e) {}
 </script>
+<script defer src="https://cloud.umami.is/script.js" data-website-id="e9e6a912-fa89-4868-8068-7115dd8ac132" data-domains="ne5l7-xiaaa-aaaaj-qsm3q-cai.icp0.io"></script>
 <link rel="stylesheet" href="/fabric.css?v=718b5ac8e8">
 <script type="module" src="/fabric.js?v=718b5ac8e8"></script>
 </head>
@@ -2275,6 +2279,7 @@ try {
   }
 } catch (e) {}
 </script>
+<script defer src="https://cloud.umami.is/script.js" data-website-id="e9e6a912-fa89-4868-8068-7115dd8ac132" data-domains="ne5l7-xiaaa-aaaaj-qsm3q-cai.icp0.io"></script>
 <link rel="stylesheet" href="/fabric.css?v=718b5ac8e8">
 <script type="module" src="/fabric.js?v=718b5ac8e8"></script>
 </head>
@@ -2780,6 +2785,7 @@ try {
   }
 } catch (e) {}
 </script>
+<script defer src="https://cloud.umami.is/script.js" data-website-id="e9e6a912-fa89-4868-8068-7115dd8ac132" data-domains="ne5l7-xiaaa-aaaaj-qsm3q-cai.icp0.io"></script>
 <link rel="stylesheet" href="/fabric.css?v=718b5ac8e8">
 <script type="module" src="/fabric.js?v=718b5ac8e8"></script>
 </head>

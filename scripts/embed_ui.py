@@ -40,7 +40,7 @@ OG_TAGS = """<meta property="og:type" content="website">
 # /api/event, daily counters only) and in Umami, when UMAMI_ID is set. Umami
 # keeps no cookies; data-domains keeps local test networks out of it. Once a
 # visit, the page says whether this browser has been here before.
-UMAMI_ID = ""
+UMAMI_ID = "e9e6a912-fa89-4868-8068-7115dd8ac132"
 TRACK = """<script>
 window.ptcTrack = (name, data) => {
   try { fetch("/api/event", { method: "POST", body: name, keepalive: true }).catch(() => {}); } catch (e) {}
