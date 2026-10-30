@@ -104,6 +104,9 @@ void canister_post_upgrade() {
   // 39822184, 0.00489 ICP) but could not read the ledger's reply, so it was
   // never recorded. Record it once, before the refuel is retried.
   fuel_note_paid_share(39822184, 489000);
+  // Refuels made before the feed existed get their thank-you post.
+  for (uint64_t n = fuel_log().size(), r = 1; r <= n; ++r)
+    if (!feed_posted("fuel", r)) feed_add("fuel", r, "anon", IC_API::time());
 }
 
 void bestmove() {
