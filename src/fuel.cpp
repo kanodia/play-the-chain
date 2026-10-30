@@ -125,10 +125,10 @@ static void pending_save(uint64_t block, uint64_t e8s) {
 }
 
 static std::string reply(bool ok, const std::string &message,
-                         uint64_t e8s = 0, __uint128_t cycles = 0) {
+                         uint64_t e8s = 0, __uint128_t cycles = 0, uint64_t dev_e8s = 0) {
   return std::string("{\"ok\":") + (ok ? "true" : "false") + ",\"message\":\"" +
          message + "\",\"e8s\":" + std::to_string(e8s) +
-         ",\"cycles\":" + u128(cycles) + "}";
+         ",\"cycles\":" + u128(cycles) + ",\"dev_e8s\":" + std::to_string(dev_e8s) + "}";
 }
 
 // The ledger and the CMC are NNS canisters, so the transfer and the notify are
@@ -252,7 +252,7 @@ IC_Task<std::string> refuel(CandidTypePrincipal self) {
     share_load(share_block, share);
     share_save(0, 0);
     log_append({IC_API::time(), e8s, block, n.value, share, share_block});
-    co_return reply(true, "converted into cycles", e8s, n.value);
+    co_return reply(true, "converted into cycles", e8s, n.value, share);
   }
   // Refunded and too-old payments are final; anything else is tried again by
   // the next refuel.

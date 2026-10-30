@@ -677,6 +677,8 @@ async function refuel() {
   window.Fabric?.think(true);
   try {
     const r = await call("POST", "/api/fuel");
+    // Revenue, for Umami: what was sent, and the developer's share of it.
+    if (r.ok) window.ptcTrack?.("refuel_done", { icp: (r.e8s + r.dev_e8s) / 1e8, revenue: r.dev_e8s / 1e8, currency: "ICP" });
     $("fuel-msg").textContent = r.ok ? `Thank you! ${icp(r.e8s)} became ${fmt(r.cycles)} cycles for everyone.`
       : r.message.charAt(0).toUpperCase() + r.message.slice(1) + ".";
     info = await call("GET", "/api/info"); renderInfo();
@@ -1151,6 +1153,8 @@ async function refuel() {
   $("fuel-msg").textContent = "Asking the ICP ledger and the cycles minting canister…";
   try {
     const r = await call("POST", "/api/fuel");
+    // Revenue, for Umami: what was sent, and the developer's share of it.
+    if (r.ok) window.ptcTrack?.("refuel_done", { icp: (r.e8s + r.dev_e8s) / 1e8, revenue: r.dev_e8s / 1e8, currency: "ICP" });
     $("fuel-msg").textContent = r.ok ? `Thank you! ${icp(r.e8s)} became ${fmt(r.cycles)} cycles for everyone.`
       : r.message.charAt(0).toUpperCase() + r.message.slice(1) + ".";
     refreshInfo();

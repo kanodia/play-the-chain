@@ -50,7 +50,7 @@ bool stats_event_allowed(const std::string &name) {
   static const char *EVENTS[] = {
       "visit_new",  "visit_return", "chess_start", "chess_end",  "chess_win",
       "golf_start", "golf_finish",  "golf_holed",  "mg_start",   "mg_finish",
-      "feed_post",  "feed_react",   "share",       "refuel_click"};
+      "feed_post",  "feed_react",   "share",       "refuel_click", "refuel_done"};
   for (const char *e : EVENTS)
     if (name == e) return true;
   return false;

@@ -1012,8 +1012,18 @@ static IC_Async http_request_update_async() {
   if (method == "POST" && path == "/api/fuel") {
     size_t refuels = fuel_log().size();
     std::string out = co_await refuel(ic_api.get_canister_self());
-    // Every refuel gets a thank-you in the feed.
-    for (size_t n = fuel_log().size(); refuels < n;) feed_add("fuel", ++refuels, "anon", IC_API::time());
+    // Every refuel gets a thank-you in the feed, and goes in the revenue
+    // counters: counted here, from the ledger's own transfers, not by the page.
+    std::vector<FuelEntry> log = fuel_log();
+    for (; refuels < log.size(); ++refuels) {
+      const FuelEntry &e = log[refuels];
+      feed_add("fuel", refuels + 1, "anon", IC_API::time());
+      uint32_t day = golf_today();
+      stats_add(day, "fuel:refuels");
+      stats_add(day, "fuel:e8s_in", e.e8s + e.dev_e8s + (e.dev_e8s ? 20'000 : 10'000));
+      stats_add(day, "fuel:dev_e8s", e.dev_e8s);
+      stats_add(day, "fuel:cycles_b", uint64_t(e.cycles / 1'000'000'000));
+    }
     ic_api.to_wire(json(out));
     co_return;
   }
