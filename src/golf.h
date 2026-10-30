@@ -31,6 +31,7 @@ struct GolfRound {
   bool holed() const;
   bool finished() const; // holed, or out of shots
   bool drilled() const;  // played on a hole with its cup cut
+  bool varied() const;   // played on its level's own hole, not the classic one
 };
 
 // The course a round was played on.
@@ -39,6 +40,9 @@ GolfCourse golf_round_course(const GolfRound &round);
 // Called after every upgrade: the first upgrade with the fix records which
 // round is the first one played on a drilled hole.
 void golf_mark_drilled_from();
+
+// Likewise for the first round played on a hole of its own per level.
+void golf_mark_varied_from();
 
 constexpr size_t GOLF_MAX_SHOTS = 12;
 

@@ -128,10 +128,11 @@
 <script>
 const $ = (id) => document.getElementById(id);
 const fmt = (n) => n >= 1e9 ? (n / 1e9).toFixed(2) + "B" : n >= 1e6 ? (n / 1e6).toFixed(1) + "M" : n >= 1e3 ? (n / 1e3).toFixed(1) + "k" : String(n);
-// Levels 1..20 of the same hole: 10 is the classic; below it the cup is
-// wider and there's an aim guide, above it the cup tightens and a headwind grows.
-const GOLF_LEVELS = (n) => n <= 4 ? "Wide cup · full aim guide" : n <= 9 ? "Wider cup · short aim guide"
-  : n === 10 ? "The classic hole" : n <= 15 ? "Tighter cup · light headwind" : "Tight cup · strong headwind";
+// Levels 1..20, each its own hole with its own scenery: more obstacles and
+// steeper hills as you climb; below 10 the cup is wider and there's an aim
+// guide, above it the cup tightens and a headwind grows.
+const GOLF_LEVELS = (n) => window.ptcScene(n).name + " · " + (n <= 4 ? "wide cup, full aim guide" : n <= 9 ? "wider cup, short aim guide"
+  : n <= 12 ? "more obstacles" : n <= 15 ? "tighter cup, light headwind" : "tight cup, strong headwind");
 const golfLevels = window.ptcLevels("golf");
 let level = golfLevels.current(); // the level for a new round; a round keeps its own
 const KEY = (id) => "golf_key_" + id, MINE = (day, lv = level) => "golf_round_" + day + (lv === 10 ? "" : "_" + lv);
@@ -165,22 +166,34 @@ function draw() {
   if (cv.width !== cv.clientWidth * dpr) { cv.width = cv.clientWidth * dpr; cv.height = cv.clientHeight * dpr; }
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   const w = cv.clientWidth, h = cv.clientHeight, v = view();
-  const sky = ctx.createLinearGradient(0, 0, 0, h); sky.addColorStop(0, "#0f1a2b"); sky.addColorStop(1, "#1b2d44");
+  const sc = window.ptcScene(course.level);
+  const sky = ctx.createLinearGradient(0, 0, 0, h); sky.addColorStop(0, sc.sky[0]); sky.addColorStop(1, sc.sky[1]);
   ctx.fillStyle = sky; ctx.fillRect(0, 0, w, h);
+  if (sc.stars) {
+    ctx.fillStyle = "rgba(232,236,243,.7)";
+    for (let i = 0; i < 60; i++) ctx.fillRect((i * 0.618034 % 1) * w, (i * 0.754878 % 1) * h * 0.6, 1.5, 1.5);
+  }
+  if (sc.body) {
+    const b = sc.body, r = b.r * Math.min(w, h * 2);
+    const glow = ctx.createRadialGradient(b.x * w, b.y * h, r * 0.6, b.x * w, b.y * h, r * 3);
+    glow.addColorStop(0, b.color + "55"); glow.addColorStop(1, b.color + "00");
+    ctx.fillStyle = glow; ctx.fillRect(0, 0, w, h);
+    ctx.fillStyle = b.color; ctx.beginPath(); ctx.arc(b.x * w, b.y * h, r, 0, 7); ctx.fill();
+  }
 
   // ground
   ctx.beginPath(); ctx.moveTo(v.toX(course.ground[0][0]), h);
   for (const [x, y] of course.ground) ctx.lineTo(v.toX(x), v.toY(y));
   ctx.lineTo(v.toX(course.ground[course.ground.length - 1][0]), h); ctx.closePath();
-  const turf = ctx.createLinearGradient(0, 0, 0, h); turf.addColorStop(0, "#2f7d53"); turf.addColorStop(1, "#173a28");
+  const turf = ctx.createLinearGradient(0, 0, 0, h); turf.addColorStop(0, sc.turf[0]); turf.addColorStop(1, sc.turf[1]);
   ctx.fillStyle = turf; ctx.fill();
-  ctx.strokeStyle = "#5fbf86"; ctx.lineWidth = 2; ctx.beginPath();
+  ctx.strokeStyle = sc.edge; ctx.lineWidth = 2; ctx.beginPath();
   course.ground.forEach(([x, y], i) => i ? ctx.lineTo(v.toX(x), v.toY(y)) : ctx.moveTo(v.toX(x), v.toY(y))); ctx.stroke();
 
   // obstacles
   for (const b of course.boxes) {
     ctx.save(); ctx.translate(v.toX(b.x), v.toY(b.y)); ctx.rotate(-b.angle);
-    ctx.fillStyle = "#b98a56"; ctx.strokeStyle = "#6e4f2e"; ctx.lineWidth = 1.5;
+    ctx.fillStyle = sc.wood[0]; ctx.strokeStyle = sc.wood[1]; ctx.lineWidth = 1.5;
     ctx.fillRect(-b.half_w * v.s, -b.half_h * v.s, 2 * b.half_w * v.s, 2 * b.half_h * v.s);
     ctx.strokeRect(-b.half_w * v.s, -b.half_h * v.s, 2 * b.half_w * v.s, 2 * b.half_h * v.s);
     ctx.restore();
@@ -272,7 +285,7 @@ function hud() {
   if (!course) return;
   const date = new Date(course.day * 86400e3).toLocaleDateString([], { month: "short", day: "numeric", timeZone: "UTC" });
   const lv = course.level ?? 10;
-  $("hud").innerHTML = `Hole of <b>${date}</b> · <b>level ${lv}</b> · par <b>${course.par}</b>` + (round ? ` · strokes <b>${round.strokes}</b>` : "") +
+  $("hud").innerHTML = `Hole of <b>${date}</b> · <b>level ${lv}</b> · ${window.ptcScene(lv).name.toLowerCase()} · par <b>${course.par}</b>` + (round ? ` · strokes <b>${round.strokes}</b>` : "") +
     (course.wind ? ` · wind <b>${course.wind < 0 ? "←" : "→"} ${Math.abs(course.wind).toFixed(1)}</b>` : "");
 }
 
@@ -326,6 +339,7 @@ async function start() {
   $("start").disabled = true;
   setStatus("Creating your round on-chain…", true);
   try {
+    window.ptcName.set($("name").value);
     round = await call("POST", "/api/golf/round", $("name").value + "\n" + level);
     key = round.key; store(KEY(round.id), key); store(MINE(round.day, round.level), String(round.id));
     history.replaceState(null, "", "/golf/" + round.id);
@@ -392,7 +406,7 @@ for (const [id, to] of [["share-x", "x"], ["share-wa", "wa"]])
 // Your round for today is remembered in this browser; this starts a fresh one.
 $("again").onclick = $("restart").onclick = () => {
   try { localStorage.removeItem(MINE(course.day, course.level ?? 1)); } catch (e) {}
-  location.href = "/golf";
+  location.href = "/golf?go=1"; // straight onto the tee: the name is remembered
 };
 $("start").onclick = start;
 
@@ -462,6 +476,7 @@ $("copy-btn").onclick = async () => {
 // ---------- load ----------
 async function load() {
   syncAim();
+  $("name").value = window.ptcName.get();
   const m = location.pathname.match(/^\/golf\/(\d+)$/);
   try {
     // Both at once: each is an update call, a second or two on mainnet.
@@ -474,6 +489,8 @@ async function load() {
       if (mine) { location.replace("/golf/" + mine + "#resume"); return; }
       showLevel(t);
       $("setup").hidden = false; setStatus("Today's hole is ready. Pick a level, then press Tee off.");
+      // "Play level n" and "New round" tee off straight away.
+      if (new URLSearchParams(location.search).has("go")) { history.replaceState(null, "", "/golf"); start(); }
       return;
     }
     course = r.course; round = r.round; key = read(KEY(round.id));

@@ -274,7 +274,17 @@ const myTurn = () => game && key && game.status === "playing" && view === null &
   (plies() % 2 === 0) === (game.human === "w");
 
 // ---------- board ----------
+// Each scenery tier has its own board, as the golf holes have their sky.
+const BOARDS = { Sunrise: ["#f3e3cf", "#c98f6b"], Midday: ["#e8f1e0", "#7aa36b"], Evening: ["#d9dee8", "#6b7a99"],
+  Sunset: ["#f2d4c2", "#b05f5a"], Midnight: ["#c9d2e6", "#34405e"] };
+function boardTheme(n) {
+  const [l, d] = BOARDS[window.ptcScene(n).name];
+  document.documentElement.style.setProperty("--light", l);
+  document.documentElement.style.setProperty("--dark", d);
+}
+
 function render() {
+  if (game && game.level_n) boardTheme(game.level_n);
   const shown = view === null ? plies() : view;
   const c = chessAt(shown);
   const last = shown > 0 ? game.moves[shown - 1].uci : null;
@@ -560,7 +570,8 @@ const CHESS_LEVELS = (n) => n <= 3 ? "Stockfish blunders a lot" : n <= 6 ? "Stoc
   : n <= 9 ? "Stockfish makes some mistakes" : n === 10 ? "No random mistakes any more" : n <= 14 ? "Club strength"
   : n <= 19 ? "Strong: thinks deeper every level" : "Full Stockfish, depth 18: nobody has won";
 const chessLevels = window.ptcLevels("chess");
-const ladder = window.ptcLadder($("ladder"), "chess", CHESS_LEVELS);
+const ladder = window.ptcLadder($("ladder"), "chess", (n) => window.ptcScene(n).name + " board · " + CHESS_LEVELS(n), boardTheme);
+boardTheme(ladder.level());
 
 // Finished results go to the feed unless the player unticks this; the choice
 // is remembered in this browser.

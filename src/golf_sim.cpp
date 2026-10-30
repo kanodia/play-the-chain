@@ -26,12 +26,10 @@ struct Rng {
 };
 } // namespace
 
-GolfCourse golf_course(uint32_t day, bool drilled, int level) {
-  Rng rng(day);
-  GolfCourse c;
-  c.day = day;
+// The cup and the wind for a level. Level 10 keeps the classic numbers
+// exactly, so older rounds recompute.
+static void set_level(GolfCourse &c, uint32_t day, int level) {
   c.level = level;
-  // Level 10 keeps the classic numbers exactly, so older rounds recompute.
   if (level < GOLF_CLASSIC) {
     float easy = float(GOLF_CLASSIC - level) / 9.0f; // 1 at level 1
     c.cup_half_w = CUP_HALF_W + (0.70f - CUP_HALF_W) * easy;
@@ -40,44 +38,64 @@ GolfCourse golf_course(uint32_t day, bool drilled, int level) {
     float hard = float(level - GOLF_CLASSIC) / 10.0f; // 1 at level 20
     c.cup_half_w = CUP_HALF_W - 0.10f * hard;
     c.catch_speed = 1.5f - 0.6f * hard;
-    // A headwind (towards the tee), from its own generator so the hole itself
-    // is the same at every level.
+    // A headwind (towards the tee), from its own generator so the wind
+    // doesn't move the hole.
     Rng w(uint64_t(day) ^ 0x57494E44ULL);
     c.wind = -3.0f * hard * w.uniform(0.85f, 1.15f);
   }
-  const float half = c.cup_half_w;
+}
 
-  // Two waves and a tilt, flattened at the tee and around the cup.
-  float a1 = rng.uniform(0.6f, 1.8f), k1 = rng.uniform(0.12f, 0.28f), p1 = rng.uniform(0, 6.28f);
-  float a2 = rng.uniform(0.2f, 0.7f), k2 = rng.uniform(0.4f, 0.8f), p2 = rng.uniform(0, 6.28f);
-  float tilt = rng.uniform(-0.06f, 0.06f);
-  c.cup_x = std::round(rng.uniform(38.0f, 54.0f));
-  auto raw = [&](float x) { return a1 * std::sin(k1 * x + p1) + a2 * std::sin(k2 * x + p2) + tilt * x; };
-  float tee_h = raw(3.0f), cup_h = raw(c.cup_x);
-  auto height = [&](float x) {
+// Two waves and a tilt, flattened at the tee and around the cup.
+struct Hills {
+  float a1, k1, p1, a2, k2, p2, tilt, cup_x, tee_h = 0, cup_h = 0;
+  Hills(Rng &rng, float cup_lo, float cup_hi) {
+    a1 = rng.uniform(0.6f, 1.8f), k1 = rng.uniform(0.12f, 0.28f), p1 = rng.uniform(0, 6.28f);
+    a2 = rng.uniform(0.2f, 0.7f), k2 = rng.uniform(0.4f, 0.8f), p2 = rng.uniform(0, 6.28f);
+    tilt = rng.uniform(-0.06f, 0.06f);
+    cup_x = std::round(rng.uniform(cup_lo, cup_hi));
+  }
+  void settle() { tee_h = raw(3.0f), cup_h = raw(cup_x); }
+  float raw(float x) const { return a1 * std::sin(k1 * x + p1) + a2 * std::sin(k2 * x + p2) + tilt * x; }
+  float height(float x) const {
     float h = raw(x);
-    float dt = std::fabs(x - 3.0f), dc = std::fabs(x - c.cup_x);
+    float dt = std::fabs(x - 3.0f), dc = std::fabs(x - cup_x);
     if (dt < 2.0f) h = tee_h + (h - tee_h) * (dt / 2.0f);
     if (dc < 2.5f) h = cup_h + (h - cup_h) * (dc / 2.5f);
     return h;
-  };
+  }
+};
 
+// The ground, sampled every metre, with the cup cut into the flat green.
+static void lay_ground(GolfCourse &c, const Hills &hills, bool drilled) {
+  const float half = c.cup_half_w;
+  c.cup_x = hills.cup_x;
   // Before the fix the cup was never cut: it sits on a whole metre, like the
   // samples, and the cut only happened at a sample short of it.
   bool cut = !drilled;
   for (float x = COURSE_LEFT; x <= COURSE_RIGHT + 0.01f; x += 1.0f) {
-    if (!cut && x >= c.cup_x - 0.5f) { // the cup, cut into the flat green
-      c.ground.push_back({c.cup_x - half, cup_h});
-      c.ground.push_back({c.cup_x - half, cup_h - CUP_DEPTH});
-      c.ground.push_back({c.cup_x + half, cup_h - CUP_DEPTH});
-      c.ground.push_back({c.cup_x + half, cup_h});
+    if (!cut && x >= c.cup_x - 0.5f) {
+      c.ground.push_back({c.cup_x - half, hills.cup_h});
+      c.ground.push_back({c.cup_x - half, hills.cup_h - CUP_DEPTH});
+      c.ground.push_back({c.cup_x + half, hills.cup_h - CUP_DEPTH});
+      c.ground.push_back({c.cup_x + half, hills.cup_h});
       cut = true;
     }
     if (std::fabs(x - c.cup_x) < 1.0f) continue;
-    c.ground.push_back({x, height(x)});
+    c.ground.push_back({x, hills.height(x)});
   }
-  c.cup_y = cup_h;
-  c.tee = {3.0f, tee_h + GOLF_BALL_RADIUS};
+  c.cup_y = hills.cup_h;
+  c.tee = {3.0f, hills.tee_h + GOLF_BALL_RADIUS};
+}
+
+// The first holes: one per day, the same at every level, up to two obstacles.
+static GolfCourse classic_course(uint32_t day, bool drilled, int level) {
+  Rng rng(day);
+  GolfCourse c;
+  c.day = day;
+  set_level(c, day, level);
+  Hills hills(rng, 38.0f, 54.0f);
+  hills.settle();
+  lay_ground(c, hills, drilled);
 
   // Up to two obstacles between the tee and the cup: a wall or a tilted plank.
   int n = int(rng.next() % 3);
@@ -88,11 +106,70 @@ GolfCourse golf_course(uint32_t day, bool drilled, int level) {
     b.half_w = wall ? rng.uniform(0.2f, 0.4f) : rng.uniform(1.0f, 2.2f);
     b.half_h = wall ? rng.uniform(0.6f, 1.6f) : 0.15f;
     b.angle = wall ? 0.0f : rng.uniform(-0.5f, 0.5f);
-    b.y = height(b.x) + (wall ? b.half_h : rng.uniform(1.2f, 2.5f));
+    b.y = hills.height(b.x) + (wall ? b.half_h : rng.uniform(1.2f, 2.5f));
     c.boxes.push_back(b);
   }
   c.par = n == 2 ? 4 : 3;
   return c;
+}
+
+// How many obstacles a level gets: one at the start, three or four at the top.
+static int obstacle_count(Rng &rng, int level) {
+  if (level <= 3) return 1;
+  if (level <= 7) return 1 + int(rng.next() % 2);
+  if (level <= 12) return 2 + int(rng.next() % 2);
+  if (level <= 17) return 3;
+  return 3 + int(rng.next() % 2);
+}
+
+// Every level of every day is its own hole. Higher levels get steeper hills
+// and more, bigger obstacles: walls, tilted planks and floating blocks.
+static GolfCourse varied_course(uint32_t day, int level) {
+  Rng rng((uint64_t(day) << 8) ^ uint64_t(level) ^ 0x484F4C45ULL);
+  GolfCourse c;
+  c.day = day;
+  set_level(c, day, level);
+  const float t = float(level - 1) / float(GOLF_MAX_LEVEL - 1); // 0 at level 1, 1 at level 20
+  Hills hills(rng, 34.0f, 54.0f);
+  float steep = 0.7f + 0.7f * t;
+  hills.a1 *= steep, hills.a2 *= steep;
+  hills.settle();
+  lay_ground(c, hills, true);
+
+  // One obstacle in each stretch between the tee and the green, so they never
+  // pile up on each other.
+  int n = obstacle_count(rng, level);
+  const float lo = 9.0f, hi = c.cup_x - 5.0f, span = (hi - lo) / float(n);
+  for (int i = 0; i < n; ++i) {
+    GolfBox b;
+    b.x = std::round(rng.uniform(lo + span * i + 0.5f, lo + span * (i + 1) - 0.5f));
+    int kind = int(rng.next() % 3); // 0 wall, 1 plank, 2 block
+    // No wall just before the green: a ball that rolls back to its foot can't
+    // climb out against the wind.
+    if (i == n - 1 && kind == 0) kind = 1 + int(rng.next() % 2);
+    float ground = hills.height(b.x);
+    if (kind == 0) {
+      b.half_w = rng.uniform(0.2f, 0.4f);
+      b.half_h = rng.uniform(0.5f, 1.0f) + 0.9f * t;
+      b.y = ground + b.half_h;
+    } else if (kind == 1) {
+      b.half_w = rng.uniform(1.0f, 2.2f);
+      b.half_h = 0.15f;
+      b.angle = rng.uniform(-0.5f, 0.5f);
+      b.y = ground + rng.uniform(1.2f, 2.5f);
+    } else {
+      b.half_w = b.half_h = rng.uniform(0.4f, 0.7f) + 0.2f * t;
+      b.angle = rng.uniform(-0.4f, 0.4f);
+      b.y = ground + b.half_h + rng.uniform(1.5f, 3.5f);
+    }
+    c.boxes.push_back(b);
+  }
+  c.par = n <= 2 ? 3 : n == 3 ? 4 : 5;
+  return c;
+}
+
+GolfCourse golf_course(uint32_t day, bool drilled, int level, bool varied) {
+  return varied ? varied_course(day, level) : classic_course(day, drilled, level);
 }
 
 static void build_world(b2World &world, const GolfCourse &c) {

@@ -49,7 +49,22 @@ static uint64_t rounds_count() {
   return n;
 }
 
-MgCourse mg_round_course(const MgRound &r) { return mg_course(r.day, r.level); }
+static const char *VARIED_PATH = "/mg_varied_from.txt";
+
+bool MgRound::varied() const {
+  std::ifstream file(VARIED_PATH);
+  uint64_t from{0};
+  if (file) file >> from;
+  return id >= (from ? from : 1); // no record: every round is new
+}
+
+void mg_mark_varied_from() {
+  if (std::ifstream(VARIED_PATH)) return;
+  std::ofstream file(VARIED_PATH, std::ios::trunc);
+  file << rounds_count() + 1;
+}
+
+MgCourse mg_round_course(const MgRound &r) { return mg_course(r.day, r.level, r.varied()); }
 
 MgRound mg_round_new(uint32_t day, const std::string &name, uint64_t now_ns, int level) {
   uint64_t id = rounds_count() + 1;

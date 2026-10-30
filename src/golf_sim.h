@@ -15,9 +15,9 @@ struct GolfBox { // a static obstacle, centred at (x, y)
   float x = 0, y = 0, half_w = 0, half_h = 0, angle = 0;
 };
 
-// Levels 1..20 of the same daily hole. Level 10 is the hole as it always was;
-// below it the cup is wider and holds faster balls, above it the cup is
-// tighter and a headwind grows.
+// Levels 1..20. Below level 10 the cup is wider and holds faster balls, above
+// it the cup is tighter and a headwind grows. Each level of a day is its own
+// hole, with more obstacles the higher it goes.
 constexpr int GOLF_CLASSIC = 10, GOLF_MAX_LEVEL = 20;
 
 struct GolfCourse {
@@ -48,7 +48,10 @@ constexpr float GOLF_MAX_POWER = 100.0f; // percent
 
 // drilled: the cup cut into the ground. Rounds before the fix played holes
 // without one, and keep them, so they still recompute exactly.
-GolfCourse golf_course(uint32_t day, bool drilled = true, int level = GOLF_CLASSIC);
+// varied: a hole of its own for each level. Rounds from before played the
+// classic hole, the same at every level, and keep it the same way.
+GolfCourse golf_course(uint32_t day, bool drilled = true, int level = GOLF_CLASSIC,
+                       bool varied = true);
 
 // One stroke from `from`. angle in degrees (0..180), power in percent.
 ShotResult golf_shoot(const GolfCourse &course, GolfPoint from, float angle,

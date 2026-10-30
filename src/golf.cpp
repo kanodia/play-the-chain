@@ -42,17 +42,22 @@ bool GolfRound::holed() const {
 bool GolfRound::finished() const { return holed() || shots.size() >= GOLF_MAX_SHOTS; }
 
 static const char *DRILLED_PATH = "/golf_drilled_from.txt";
+static const char *VARIED_PATH = "/golf_varied_from.txt";
 
-static uint64_t drilled_from() {
-  std::ifstream file(DRILLED_PATH);
+// The first round id recorded in a marker file.
+static uint64_t first_round(const char *path) {
+  std::ifstream file(path);
   uint64_t id{0};
   if (file) file >> id;
   return id ? id : 1; // no record: every round is new
 }
 
-bool GolfRound::drilled() const { return id >= drilled_from(); }
+bool GolfRound::drilled() const { return id >= first_round(DRILLED_PATH); }
+bool GolfRound::varied() const { return id >= first_round(VARIED_PATH); }
 
-GolfCourse golf_round_course(const GolfRound &r) { return golf_course(r.day, r.drilled(), r.level); }
+GolfCourse golf_round_course(const GolfRound &r) {
+  return golf_course(r.day, r.drilled(), r.level, r.varied());
+}
 
 int golf_take_level(std::string &line) {
   if (line.size() < 2 || line[0] != '#') return GOLF_CLASSIC;
@@ -64,11 +69,15 @@ int golf_take_level(std::string &line) {
 
 static uint64_t rounds_count();
 
-void golf_mark_drilled_from() {
-  if (std::ifstream(DRILLED_PATH)) return;
-  std::ofstream file(DRILLED_PATH, std::ios::trunc);
+static void mark_from(const char *path) {
+  if (std::ifstream(path)) return;
+  std::ofstream file(path, std::ios::trunc);
   file << rounds_count() + 1;
 }
+
+void golf_mark_drilled_from() { mark_from(DRILLED_PATH); }
+
+void golf_mark_varied_from() { mark_from(VARIED_PATH); }
 
 std::string golf_clean_name(const std::string &raw) {
   std::string out;

@@ -12,13 +12,14 @@
 
 static float dist(const GolfCourse &c, GolfPoint p) { return std::fabs(p.x - c.cup_x); }
 
-// Optional argument: the level, 1-20 (default 10, the classic hole).
+// Optional arguments: the level, 1-20 (default 10), and how many days (30).
 int main(int argc, char **argv) {
   int level = argc > 1 ? std::atoi(argv[1]) : GOLF_CLASSIC;
+  uint32_t days = argc > 2 ? uint32_t(std::atoi(argv[2])) : 30;
   int unsolved = 0, total_strokes = 0, shots = 0;
   long long steps = 0;
   auto t0 = std::chrono::steady_clock::now();
-  for (uint32_t day = 20750; day < 20780; ++day) {
+  for (uint32_t day = 20750; day < 20750 + days; ++day) {
     GolfCourse c = golf_course(day, true, level);
     ShotResult a = golf_shoot(c, c.tee, 45, 60), b = golf_shoot(c, c.tee, 45, 60);
     if (a.end.x != b.end.x || a.end.y != b.end.y || a.frames.size() != b.frames.size()) {
@@ -49,6 +50,6 @@ int main(int argc, char **argv) {
   }
   double s = std::chrono::duration<double>(std::chrono::steady_clock::now() - t0).count();
   std::printf("level %d: unsolved %d, avg strokes %.2f, %d shots, %.0f steps/shot, %.2f ms/shot native\n",
-              level, unsolved, total_strokes / 30.0, shots, double(steps) / shots, 1000 * s / shots);
+              level, unsolved, total_strokes / double(days), shots, double(steps) / shots, 1000 * s / shots);
   return unsolved;
 }

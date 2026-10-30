@@ -46,6 +46,61 @@ window.ptcTrack = (name, data) => {
   try { fetch("/api/event", { method: "POST", body: name, keepalive: true }).catch(() => {}); } catch (e) {}
   try { window.umami && window.umami.track(name, data); } catch (e) {}
 };
+// The level ladder, shared by the games: levels 1..20, unlocked one at a
+// time by winning, remembered per game in this browser.
+window.ptcLevels = (game) => {
+  const key = "ptc-" + game, get = (k, d) => { try { const v = +localStorage.getItem(key + k); return v >= 1 && v <= 20 ? v : d; } catch (e) { return d; } };
+  const put = (k, v) => { try { localStorage.setItem(key + k, String(v)); } catch (e) {} };
+  return {
+    unlocked: () => get("-unlocked", 1),
+    current: () => Math.min(get("-level", 1), get("-unlocked", 1)),
+    set: (n) => put("-level", n),
+    unlock: (n) => { if (n <= 20 && n > get("-unlocked", 1)) { put("-unlocked", n); return true; } return false; },
+  };
+};
+// Draws the ladder into `box`: ◀ Level n ▶, what the level is like, and how
+// far this browser has unlocked. onChange(n) runs when the player moves.
+window.ptcLadder = (box, game, describe, onChange) => {
+  const lv = window.ptcLevels(game);
+  box.classList.add("ladder");
+  box.innerHTML = `<button type="button" class="lv-step" data-d="-1" aria-label="Easier level">◀</button>
+    <div class="lv-mid"><b class="lv-n"></b><small class="lv-desc"></small></div>
+    <button type="button" class="lv-step" data-d="1" aria-label="Harder level">▶</button>
+    <small class="lv-unlocked"></small>`;
+  const show = (n) => {
+    box.querySelector(".lv-n").textContent = "Level " + n;
+    box.querySelector(".lv-desc").textContent = describe(n);
+    box.querySelector('[data-d="-1"]').disabled = n <= 1;
+    box.querySelector('[data-d="1"]').disabled = n >= lv.unlocked();
+    box.querySelector(".lv-unlocked").textContent = lv.unlocked() >= 20 ? "All 20 levels unlocked 🏆"
+      : `Unlocked: 1–${lv.unlocked()} · win to unlock level ${lv.unlocked() + 1} 🔒`;
+  };
+  let n = lv.current();
+  box.querySelectorAll(".lv-step").forEach((b) => b.onclick = () => {
+    n = Math.max(1, Math.min(lv.unlocked(), n + +b.dataset.d)); lv.set(n); show(n); onChange && onChange(n);
+  });
+  show(n);
+  return { level: () => n, refresh: () => { n = lv.current(); show(n); } };
+};
+// The scenery for a level, the same tiers in every game: sunrise, midday,
+// evening (the original look), sunset and midnight. body: a sun or moon at
+// (x, y) as fractions of the view.
+window.ptcScene = (n) => [
+  { name: "Sunrise", sky: ["#3b5b8c", "#f2a97e"], turf: ["#4fae6e", "#2a6b45"], edge: "#8be0a4", wood: ["#c99a64", "#7a5634"],
+    body: { x: 0.16, y: 0.38, r: 0.035, color: "#ffd9a0" } },
+  { name: "Midday", sky: ["#3f86d1", "#a9d4f5"], turf: ["#43a362", "#1f5a36"], edge: "#86dca0", wood: ["#c99a64", "#7a5634"],
+    body: { x: 0.78, y: 0.16, r: 0.05, color: "#fff4c2" } },
+  { name: "Evening", sky: ["#0f1a2b", "#1b2d44"], turf: ["#2f7d53", "#173a28"], edge: "#5fbf86", wood: ["#b98a56", "#6e4f2e"] },
+  { name: "Sunset", sky: ["#2b1f4a", "#e86a4a"], turf: ["#2d6b47", "#14301f"], edge: "#79c08e", wood: ["#a8774a", "#5e3f22"],
+    body: { x: 0.86, y: 0.36, r: 0.038, color: "#ff9e5e" } },
+  { name: "Midnight", sky: ["#03050c", "#0b1530"], turf: ["#1d4a35", "#0b1d14"], edge: "#3f8f68", wood: ["#8a6a48", "#4a3622"],
+    body: { x: 0.8, y: 0.18, r: 0.028, color: "#dfe6f5" }, stars: true },
+][Math.min(4, Math.floor((Math.max(1, Math.min(20, n || 10)) - 1) / 4))];
+// The player's name, kept in this browser for every game.
+window.ptcName = {
+  get: () => { try { return localStorage.getItem("ptc-name") || ""; } catch (e) { return ""; } },
+  set: (v) => { try { localStorage.setItem("ptc-name", (v || "").trim()); } catch (e) {} },
+};
 try {
   if (!sessionStorage.getItem("ptc-visit")) {
     sessionStorage.setItem("ptc-visit", "1");

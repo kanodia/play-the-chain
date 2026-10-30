@@ -34,11 +34,16 @@ application subnet and agreed on by consensus.
     hash of the game and move number, so every node agrees), then Stockfish's
     Skill Level rises, and level 20 is full strength at depth 18. The page
     sends only the level; the canister picks the settings.
-  - Golf and 3D: level 10 is the classic hole, bit for bit, so every older
-    round still recomputes. Below it the cup is wider and holds faster balls,
-    with an aim guide; above it the cup tightens, a headwind grows (golf), the
-    windmill speeds up and bumpers guard the cup (3D). One daily board ranks
-    the highest level first, then the fewest strokes.
+  - Golf and 3D: every level of every day is its own hole, with steeper
+    hills and more obstacles as you climb. Below level 10 the cup is wider and
+    holds faster balls, with an aim guide; above it the cup tightens, a
+    headwind grows (golf), the windmill speeds up and bumpers guard the cup
+    (3D). Rounds from before keep the classic hole (`/golf_varied_from.txt`,
+    `/mg_varied_from.txt`), so they still recompute bit for bit. One daily
+    board ranks the highest level first, then the fewest strokes.
+  - Scenery follows the level in every game (`window.ptcScene`): sunrise,
+    midday, evening, sunset and midnight, four levels each; chess changes its
+    board colours.
   - `native/golf_test.cpp <level>` and `native/minigolf_test.cpp <level> <days>`
     check that a greedy player can hole every day at a level.
 - **Storage:** every game, round and post is a small file in stable memory

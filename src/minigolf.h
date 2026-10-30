@@ -30,6 +30,7 @@ struct MgRound {
   int strokes() const;                        // an out of bounds costs one more
   bool holed() const;
   bool finished() const; // holed, or out of shots
+  bool varied() const;   // played on its level's own green, not the classic one
 };
 
 constexpr size_t MG_MAX_SHOTS = 10;
@@ -38,6 +39,10 @@ MgRound mg_round_new(uint32_t day, const std::string &name, uint64_t now_ns,
                      int level = MG_CLASSIC);
 // The course a round was played on: its day, at its level.
 MgCourse mg_round_course(const MgRound &round);
+
+// Called after every upgrade: the first one records which round is the first
+// played on a varied green.
+void mg_mark_varied_from();
 bool mg_round_load(uint64_t id, MgRound &round);
 void mg_round_save(const MgRound &round);
 std::vector<uint64_t> mg_day_rounds(uint32_t day);

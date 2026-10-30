@@ -527,6 +527,25 @@ window.ptcLadder = (box, game, describe, onChange) => {
   show(n);
   return { level: () => n, refresh: () => { n = lv.current(); show(n); } };
 };
+// The scenery for a level, the same tiers in every game: sunrise, midday,
+// evening (the original look), sunset and midnight. body: a sun or moon at
+// (x, y) as fractions of the view.
+window.ptcScene = (n) => [
+  { name: "Sunrise", sky: ["#3b5b8c", "#f2a97e"], turf: ["#4fae6e", "#2a6b45"], edge: "#8be0a4", wood: ["#c99a64", "#7a5634"],
+    body: { x: 0.16, y: 0.38, r: 0.035, color: "#ffd9a0" } },
+  { name: "Midday", sky: ["#3f86d1", "#a9d4f5"], turf: ["#43a362", "#1f5a36"], edge: "#86dca0", wood: ["#c99a64", "#7a5634"],
+    body: { x: 0.78, y: 0.16, r: 0.05, color: "#fff4c2" } },
+  { name: "Evening", sky: ["#0f1a2b", "#1b2d44"], turf: ["#2f7d53", "#173a28"], edge: "#5fbf86", wood: ["#b98a56", "#6e4f2e"] },
+  { name: "Sunset", sky: ["#2b1f4a", "#e86a4a"], turf: ["#2d6b47", "#14301f"], edge: "#79c08e", wood: ["#a8774a", "#5e3f22"],
+    body: { x: 0.86, y: 0.36, r: 0.038, color: "#ff9e5e" } },
+  { name: "Midnight", sky: ["#03050c", "#0b1530"], turf: ["#1d4a35", "#0b1d14"], edge: "#3f8f68", wood: ["#8a6a48", "#4a3622"],
+    body: { x: 0.8, y: 0.18, r: 0.028, color: "#dfe6f5" }, stars: true },
+][Math.min(4, Math.floor((Math.max(1, Math.min(20, n || 10)) - 1) / 4))];
+// The player's name, kept in this browser for every game.
+window.ptcName = {
+  get: () => { try { return localStorage.getItem("ptc-name") || ""; } catch (e) { return ""; } },
+  set: (v) => { try { localStorage.setItem("ptc-name", (v || "").trim()); } catch (e) {} },
+};
 try {
   if (!sessionStorage.getItem("ptc-visit")) {
     sessionStorage.setItem("ptc-visit", "1");
@@ -962,6 +981,25 @@ window.ptcLadder = (box, game, describe, onChange) => {
   show(n);
   return { level: () => n, refresh: () => { n = lv.current(); show(n); } };
 };
+// The scenery for a level, the same tiers in every game: sunrise, midday,
+// evening (the original look), sunset and midnight. body: a sun or moon at
+// (x, y) as fractions of the view.
+window.ptcScene = (n) => [
+  { name: "Sunrise", sky: ["#3b5b8c", "#f2a97e"], turf: ["#4fae6e", "#2a6b45"], edge: "#8be0a4", wood: ["#c99a64", "#7a5634"],
+    body: { x: 0.16, y: 0.38, r: 0.035, color: "#ffd9a0" } },
+  { name: "Midday", sky: ["#3f86d1", "#a9d4f5"], turf: ["#43a362", "#1f5a36"], edge: "#86dca0", wood: ["#c99a64", "#7a5634"],
+    body: { x: 0.78, y: 0.16, r: 0.05, color: "#fff4c2" } },
+  { name: "Evening", sky: ["#0f1a2b", "#1b2d44"], turf: ["#2f7d53", "#173a28"], edge: "#5fbf86", wood: ["#b98a56", "#6e4f2e"] },
+  { name: "Sunset", sky: ["#2b1f4a", "#e86a4a"], turf: ["#2d6b47", "#14301f"], edge: "#79c08e", wood: ["#a8774a", "#5e3f22"],
+    body: { x: 0.86, y: 0.36, r: 0.038, color: "#ff9e5e" } },
+  { name: "Midnight", sky: ["#03050c", "#0b1530"], turf: ["#1d4a35", "#0b1d14"], edge: "#3f8f68", wood: ["#8a6a48", "#4a3622"],
+    body: { x: 0.8, y: 0.18, r: 0.028, color: "#dfe6f5" }, stars: true },
+][Math.min(4, Math.floor((Math.max(1, Math.min(20, n || 10)) - 1) / 4))];
+// The player's name, kept in this browser for every game.
+window.ptcName = {
+  get: () => { try { return localStorage.getItem("ptc-name") || ""; } catch (e) { return ""; } },
+  set: (v) => { try { localStorage.setItem("ptc-name", (v || "").trim()); } catch (e) {} },
+};
 try {
   if (!sessionStorage.getItem("ptc-visit")) {
     sessionStorage.setItem("ptc-visit", "1");
@@ -1106,7 +1144,17 @@ const myTurn = () => game && key && game.status === "playing" && view === null &
   (plies() % 2 === 0) === (game.human === "w");
 
 // ---------- board ----------
+// Each scenery tier has its own board, as the golf holes have their sky.
+const BOARDS = { Sunrise: ["#f3e3cf", "#c98f6b"], Midday: ["#e8f1e0", "#7aa36b"], Evening: ["#d9dee8", "#6b7a99"],
+  Sunset: ["#f2d4c2", "#b05f5a"], Midnight: ["#c9d2e6", "#34405e"] };
+function boardTheme(n) {
+  const [l, d] = BOARDS[window.ptcScene(n).name];
+  document.documentElement.style.setProperty("--light", l);
+  document.documentElement.style.setProperty("--dark", d);
+}
+
 function render() {
+  if (game && game.level_n) boardTheme(game.level_n);
   const shown = view === null ? plies() : view;
   const c = chessAt(shown);
   const last = shown > 0 ? game.moves[shown - 1].uci : null;
@@ -1392,7 +1440,8 @@ const CHESS_LEVELS = (n) => n <= 3 ? "Stockfish blunders a lot" : n <= 6 ? "Stoc
   : n <= 9 ? "Stockfish makes some mistakes" : n === 10 ? "No random mistakes any more" : n <= 14 ? "Club strength"
   : n <= 19 ? "Strong: thinks deeper every level" : "Full Stockfish, depth 18: nobody has won";
 const chessLevels = window.ptcLevels("chess");
-const ladder = window.ptcLadder($("ladder"), "chess", CHESS_LEVELS);
+const ladder = window.ptcLadder($("ladder"), "chess", (n) => window.ptcScene(n).name + " board · " + CHESS_LEVELS(n), boardTheme);
+boardTheme(ladder.level());
 
 // Finished results go to the feed unless the player unticks this; the choice
 // is remembered in this browser.
@@ -1646,6 +1695,25 @@ window.ptcLadder = (box, game, describe, onChange) => {
   });
   show(n);
   return { level: () => n, refresh: () => { n = lv.current(); show(n); } };
+};
+// The scenery for a level, the same tiers in every game: sunrise, midday,
+// evening (the original look), sunset and midnight. body: a sun or moon at
+// (x, y) as fractions of the view.
+window.ptcScene = (n) => [
+  { name: "Sunrise", sky: ["#3b5b8c", "#f2a97e"], turf: ["#4fae6e", "#2a6b45"], edge: "#8be0a4", wood: ["#c99a64", "#7a5634"],
+    body: { x: 0.16, y: 0.38, r: 0.035, color: "#ffd9a0" } },
+  { name: "Midday", sky: ["#3f86d1", "#a9d4f5"], turf: ["#43a362", "#1f5a36"], edge: "#86dca0", wood: ["#c99a64", "#7a5634"],
+    body: { x: 0.78, y: 0.16, r: 0.05, color: "#fff4c2" } },
+  { name: "Evening", sky: ["#0f1a2b", "#1b2d44"], turf: ["#2f7d53", "#173a28"], edge: "#5fbf86", wood: ["#b98a56", "#6e4f2e"] },
+  { name: "Sunset", sky: ["#2b1f4a", "#e86a4a"], turf: ["#2d6b47", "#14301f"], edge: "#79c08e", wood: ["#a8774a", "#5e3f22"],
+    body: { x: 0.86, y: 0.36, r: 0.038, color: "#ff9e5e" } },
+  { name: "Midnight", sky: ["#03050c", "#0b1530"], turf: ["#1d4a35", "#0b1d14"], edge: "#3f8f68", wood: ["#8a6a48", "#4a3622"],
+    body: { x: 0.8, y: 0.18, r: 0.028, color: "#dfe6f5" }, stars: true },
+][Math.min(4, Math.floor((Math.max(1, Math.min(20, n || 10)) - 1) / 4))];
+// The player's name, kept in this browser for every game.
+window.ptcName = {
+  get: () => { try { return localStorage.getItem("ptc-name") || ""; } catch (e) { return ""; } },
+  set: (v) => { try { localStorage.setItem("ptc-name", (v || "").trim()); } catch (e) {} },
 };
 try {
   if (!sessionStorage.getItem("ptc-visit")) {
@@ -1964,6 +2032,25 @@ window.ptcLadder = (box, game, describe, onChange) => {
   show(n);
   return { level: () => n, refresh: () => { n = lv.current(); show(n); } };
 };
+// The scenery for a level, the same tiers in every game: sunrise, midday,
+// evening (the original look), sunset and midnight. body: a sun or moon at
+// (x, y) as fractions of the view.
+window.ptcScene = (n) => [
+  { name: "Sunrise", sky: ["#3b5b8c", "#f2a97e"], turf: ["#4fae6e", "#2a6b45"], edge: "#8be0a4", wood: ["#c99a64", "#7a5634"],
+    body: { x: 0.16, y: 0.38, r: 0.035, color: "#ffd9a0" } },
+  { name: "Midday", sky: ["#3f86d1", "#a9d4f5"], turf: ["#43a362", "#1f5a36"], edge: "#86dca0", wood: ["#c99a64", "#7a5634"],
+    body: { x: 0.78, y: 0.16, r: 0.05, color: "#fff4c2" } },
+  { name: "Evening", sky: ["#0f1a2b", "#1b2d44"], turf: ["#2f7d53", "#173a28"], edge: "#5fbf86", wood: ["#b98a56", "#6e4f2e"] },
+  { name: "Sunset", sky: ["#2b1f4a", "#e86a4a"], turf: ["#2d6b47", "#14301f"], edge: "#79c08e", wood: ["#a8774a", "#5e3f22"],
+    body: { x: 0.86, y: 0.36, r: 0.038, color: "#ff9e5e" } },
+  { name: "Midnight", sky: ["#03050c", "#0b1530"], turf: ["#1d4a35", "#0b1d14"], edge: "#3f8f68", wood: ["#8a6a48", "#4a3622"],
+    body: { x: 0.8, y: 0.18, r: 0.028, color: "#dfe6f5" }, stars: true },
+][Math.min(4, Math.floor((Math.max(1, Math.min(20, n || 10)) - 1) / 4))];
+// The player's name, kept in this browser for every game.
+window.ptcName = {
+  get: () => { try { return localStorage.getItem("ptc-name") || ""; } catch (e) { return ""; } },
+  set: (v) => { try { localStorage.setItem("ptc-name", (v || "").trim()); } catch (e) {} },
+};
 try {
   if (!sessionStorage.getItem("ptc-visit")) {
     sessionStorage.setItem("ptc-visit", "1");
@@ -2041,10 +2128,11 @@ try {
 <script>
 const $ = (id) => document.getElementById(id);
 const fmt = (n) => n >= 1e9 ? (n / 1e9).toFixed(2) + "B" : n >= 1e6 ? (n / 1e6).toFixed(1) + "M" : n >= 1e3 ? (n / 1e3).toFixed(1) + "k" : String(n);
-// Levels 1..20 of the same hole: 10 is the classic; below it the cup is
-// wider and there's an aim guide, above it the cup tightens and a headwind grows.
-const GOLF_LEVELS = (n) => n <= 4 ? "Wide cup · full aim guide" : n <= 9 ? "Wider cup · short aim guide"
-  : n === 10 ? "The classic hole" : n <= 15 ? "Tighter cup · light headwind" : "Tight cup · strong headwind";
+// Levels 1..20, each its own hole with its own scenery: more obstacles and
+// steeper hills as you climb; below 10 the cup is wider and there's an aim
+// guide, above it the cup tightens and a headwind grows.
+const GOLF_LEVELS = (n) => window.ptcScene(n).name + " · " + (n <= 4 ? "wide cup, full aim guide" : n <= 9 ? "wider cup, short aim guide"
+  : n <= 12 ? "more obstacles" : n <= 15 ? "tighter cup, light headwind" : "tight cup, strong headwind");
 const golfLevels = window.ptcLevels("golf");
 let level = golfLevels.current(); // the level for a new round; a round keeps its own
 const KEY = (id) => "golf_key_" + id, MINE = (day, lv = level) => "golf_round_" + day + (lv === 10 ? "" : "_" + lv);
@@ -2078,22 +2166,34 @@ function draw() {
   if (cv.width !== cv.clientWidth * dpr) { cv.width = cv.clientWidth * dpr; cv.height = cv.clientHeight * dpr; }
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   const w = cv.clientWidth, h = cv.clientHeight, v = view();
-  const sky = ctx.createLinearGradient(0, 0, 0, h); sky.addColorStop(0, "#0f1a2b"); sky.addColorStop(1, "#1b2d44");
+  const sc = window.ptcScene(course.level);
+  const sky = ctx.createLinearGradient(0, 0, 0, h); sky.addColorStop(0, sc.sky[0]); sky.addColorStop(1, sc.sky[1]);
   ctx.fillStyle = sky; ctx.fillRect(0, 0, w, h);
+  if (sc.stars) {
+    ctx.fillStyle = "rgba(232,236,243,.7)";
+    for (let i = 0; i < 60; i++) ctx.fillRect((i * 0.618034 % 1) * w, (i * 0.754878 % 1) * h * 0.6, 1.5, 1.5);
+  }
+  if (sc.body) {
+    const b = sc.body, r = b.r * Math.min(w, h * 2);
+    const glow = ctx.createRadialGradient(b.x * w, b.y * h, r * 0.6, b.x * w, b.y * h, r * 3);
+    glow.addColorStop(0, b.color + "55"); glow.addColorStop(1, b.color + "00");
+    ctx.fillStyle = glow; ctx.fillRect(0, 0, w, h);
+    ctx.fillStyle = b.color; ctx.beginPath(); ctx.arc(b.x * w, b.y * h, r, 0, 7); ctx.fill();
+  }
 
   // ground
   ctx.beginPath(); ctx.moveTo(v.toX(course.ground[0][0]), h);
   for (const [x, y] of course.ground) ctx.lineTo(v.toX(x), v.toY(y));
   ctx.lineTo(v.toX(course.ground[course.ground.length - 1][0]), h); ctx.closePath();
-  const turf = ctx.createLinearGradient(0, 0, 0, h); turf.addColorStop(0, "#2f7d53"); turf.addColorStop(1, "#173a28");
+  const turf = ctx.createLinearGradient(0, 0, 0, h); turf.addColorStop(0, sc.turf[0]); turf.addColorStop(1, sc.turf[1]);
   ctx.fillStyle = turf; ctx.fill();
-  ctx.strokeStyle = "#5fbf86"; ctx.lineWidth = 2; ctx.beginPath();
+  ctx.strokeStyle = sc.edge; ctx.lineWidth = 2; ctx.beginPath();
   course.ground.forEach(([x, y], i) => i ? ctx.lineTo(v.toX(x), v.toY(y)) : ctx.moveTo(v.toX(x), v.toY(y))); ctx.stroke();
 
   // obstacles
   for (const b of course.boxes) {
     ctx.save(); ctx.translate(v.toX(b.x), v.toY(b.y)); ctx.rotate(-b.angle);
-    ctx.fillStyle = "#b98a56"; ctx.strokeStyle = "#6e4f2e"; ctx.lineWidth = 1.5;
+    ctx.fillStyle = sc.wood[0]; ctx.strokeStyle = sc.wood[1]; ctx.lineWidth = 1.5;
     ctx.fillRect(-b.half_w * v.s, -b.half_h * v.s, 2 * b.half_w * v.s, 2 * b.half_h * v.s);
     ctx.strokeRect(-b.half_w * v.s, -b.half_h * v.s, 2 * b.half_w * v.s, 2 * b.half_h * v.s);
     ctx.restore();
@@ -2185,7 +2285,7 @@ function hud() {
   if (!course) return;
   const date = new Date(course.day * 86400e3).toLocaleDateString([], { month: "short", day: "numeric", timeZone: "UTC" });
   const lv = course.level ?? 10;
-  $("hud").innerHTML = `Hole of <b>${date}</b> · <b>level ${lv}</b> · par <b>${course.par}</b>` + (round ? ` · strokes <b>${round.strokes}</b>` : "") +
+  $("hud").innerHTML = `Hole of <b>${date}</b> · <b>level ${lv}</b> · ${window.ptcScene(lv).name.toLowerCase()} · par <b>${course.par}</b>` + (round ? ` · strokes <b>${round.strokes}</b>` : "") +
     (course.wind ? ` · wind <b>${course.wind < 0 ? "←" : "→"} ${Math.abs(course.wind).toFixed(1)}</b>` : "");
 }
 
@@ -2239,6 +2339,7 @@ async function start() {
   $("start").disabled = true;
   setStatus("Creating your round on-chain…", true);
   try {
+    window.ptcName.set($("name").value);
     round = await call("POST", "/api/golf/round", $("name").value + "\n" + level);
     key = round.key; store(KEY(round.id), key); store(MINE(round.day, round.level), String(round.id));
     history.replaceState(null, "", "/golf/" + round.id);
@@ -2305,7 +2406,7 @@ for (const [id, to] of [["share-x", "x"], ["share-wa", "wa"]])
 // Your round for today is remembered in this browser; this starts a fresh one.
 $("again").onclick = $("restart").onclick = () => {
   try { localStorage.removeItem(MINE(course.day, course.level ?? 1)); } catch (e) {}
-  location.href = "/golf";
+  location.href = "/golf?go=1"; // straight onto the tee: the name is remembered
 };
 $("start").onclick = start;
 
@@ -2375,6 +2476,7 @@ $("copy-btn").onclick = async () => {
 // ---------- load ----------
 async function load() {
   syncAim();
+  $("name").value = window.ptcName.get();
   const m = location.pathname.match(/^\/golf\/(\d+)$/);
   try {
     // Both at once: each is an update call, a second or two on mainnet.
@@ -2387,6 +2489,8 @@ async function load() {
       if (mine) { location.replace("/golf/" + mine + "#resume"); return; }
       showLevel(t);
       $("setup").hidden = false; setStatus("Today's hole is ready. Pick a level, then press Tee off.");
+      // "Play level n" and "New round" tee off straight away.
+      if (new URLSearchParams(location.search).has("go")) { history.replaceState(null, "", "/golf"); start(); }
       return;
     }
     course = r.course; round = r.round; key = read(KEY(round.id));
@@ -2538,6 +2642,25 @@ window.ptcLadder = (box, game, describe, onChange) => {
   show(n);
   return { level: () => n, refresh: () => { n = lv.current(); show(n); } };
 };
+// The scenery for a level, the same tiers in every game: sunrise, midday,
+// evening (the original look), sunset and midnight. body: a sun or moon at
+// (x, y) as fractions of the view.
+window.ptcScene = (n) => [
+  { name: "Sunrise", sky: ["#3b5b8c", "#f2a97e"], turf: ["#4fae6e", "#2a6b45"], edge: "#8be0a4", wood: ["#c99a64", "#7a5634"],
+    body: { x: 0.16, y: 0.38, r: 0.035, color: "#ffd9a0" } },
+  { name: "Midday", sky: ["#3f86d1", "#a9d4f5"], turf: ["#43a362", "#1f5a36"], edge: "#86dca0", wood: ["#c99a64", "#7a5634"],
+    body: { x: 0.78, y: 0.16, r: 0.05, color: "#fff4c2" } },
+  { name: "Evening", sky: ["#0f1a2b", "#1b2d44"], turf: ["#2f7d53", "#173a28"], edge: "#5fbf86", wood: ["#b98a56", "#6e4f2e"] },
+  { name: "Sunset", sky: ["#2b1f4a", "#e86a4a"], turf: ["#2d6b47", "#14301f"], edge: "#79c08e", wood: ["#a8774a", "#5e3f22"],
+    body: { x: 0.86, y: 0.36, r: 0.038, color: "#ff9e5e" } },
+  { name: "Midnight", sky: ["#03050c", "#0b1530"], turf: ["#1d4a35", "#0b1d14"], edge: "#3f8f68", wood: ["#8a6a48", "#4a3622"],
+    body: { x: 0.8, y: 0.18, r: 0.028, color: "#dfe6f5" }, stars: true },
+][Math.min(4, Math.floor((Math.max(1, Math.min(20, n || 10)) - 1) / 4))];
+// The player's name, kept in this browser for every game.
+window.ptcName = {
+  get: () => { try { return localStorage.getItem("ptc-name") || ""; } catch (e) { return ""; } },
+  set: (v) => { try { localStorage.setItem("ptc-name", (v || "").trim()); } catch (e) {} },
+};
 try {
   if (!sessionStorage.getItem("ptc-visit")) {
     sessionStorage.setItem("ptc-visit", "1");
@@ -2618,9 +2741,10 @@ import * as THREE from "/three.module.min.js";
 
 const $ = (id) => document.getElementById(id);
 const fmt = (n) => n >= 1e9 ? (n / 1e9).toFixed(2) + "B" : n >= 1e6 ? (n / 1e6).toFixed(1) + "M" : n >= 1e3 ? (n / 1e3).toFixed(1) + "k" : String(n);
-// Levels 1..20 of the same hole: 10 is the classic.
-const MG_LEVELS = (n) => n <= 6 ? "Forgiving cup · aim line" : n <= 9 ? "Forgiving cup" : n === 10 ? "The classic hole"
-  : n <= 13 ? "Stricter cup · faster windmill" : n <= 17 ? "Stricter cup · a bumper guards the hole" : "Strict cup · two bumpers guard the hole";
+// Levels 1..20, each its own green with its own scenery: bigger swells and
+// more obstacles as you climb, a windmill from level 5.
+const MG_LEVELS = (n) => window.ptcScene(n).name + " · " + (n <= 4 ? "forgiving cup, aim line" : n <= 6 ? "forgiving cup, aim line, a windmill" : n <= 9 ? "forgiving cup" : n === 10 ? "regular cup, a windmill"
+  : n <= 13 ? "stricter cup, faster windmill" : n <= 17 ? "stricter cup, a bumper guards the hole" : "strict cup, two bumpers guard the hole");
 const mgLevels = window.ptcLevels("minigolf");
 let level = mgLevels.current(); // the level for a new round; a round keeps its own
 const KEY = (id) => "mg_key_" + id, MINE = (day, lv = level) => "mg_round_" + day + (lv === 10 ? "" : "_" + lv);
@@ -2646,7 +2770,8 @@ const scene = new THREE.Scene();
 scene.background = new THREE.Color(0x0f1a2b);
 scene.fog = new THREE.Fog(0x0f1a2b, 30, 60);
 const camera = new THREE.PerspectiveCamera(42, 2, 0.05, 200);
-scene.add(new THREE.HemisphereLight(0xcfe8ff, 0x1b3a26, 0.9));
+const hemi = new THREE.HemisphereLight(0xcfe8ff, 0x1b3a26, 0.9);
+scene.add(hemi);
 const sun = new THREE.DirectionalLight(0xffffff, 1.6);
 sun.position.set(6, 12, 4);
 sun.castShadow = true;
@@ -2657,8 +2782,36 @@ scene.add(sun, sun.target);
 let ball = null, aimArrow = null, guide = null, trail = null, mills = [];
 const camTarget = new THREE.Vector3(), camPos = new THREE.Vector3();
 
+// Each scenery tier's light and turf: [sun colour, sun, sky light, stripe, stripe].
+const LOOK = {
+  Sunrise: [0xffd9a0, 1.4, 0.8, 0x4fb873, 0x45a566], Midday: [0xffffff, 1.9, 1.0, 0x46ad68, 0x3c9a5c],
+  Evening: [0xffffff, 1.6, 0.9, 0x3a9a62, 0x2f8656], Sunset: [0xff9e5e, 1.3, 0.7, 0x37875a, 0x2e774f],
+  Midnight: [0x9fb3ff, 0.8, 0.45, 0x2a6d50, 0x225e44],
+};
+function setScenery(sc) {
+  const sky = document.createElement("canvas"); sky.width = 2; sky.height = 256;
+  const g = sky.getContext("2d"), grad = g.createLinearGradient(0, 0, 0, 256);
+  grad.addColorStop(0, sc.sky[0]); grad.addColorStop(1, sc.sky[1]);
+  g.fillStyle = grad; g.fillRect(0, 0, 2, 256);
+  const tex = new THREE.CanvasTexture(sky); tex.colorSpace = THREE.SRGBColorSpace;
+  scene.background = tex; scene.fog.color.set(sc.sky[1]);
+  const [col, power, ambient] = LOOK[sc.name];
+  sun.color.set(col); sun.intensity = power; hemi.intensity = ambient;
+  if (sc.stars) {
+    const p = [];
+    for (let i = 0; i < 300; i++) {
+      const a = (i * 0.618034 % 1) * Math.PI * 2, e = 0.15 + (i * 0.754878 % 1) * 1.2;
+      p.push(9 + 50 * Math.cos(e) * Math.cos(a), 50 * Math.sin(e), 3 + 50 * Math.cos(e) * Math.sin(a));
+    }
+    const geo = new THREE.BufferGeometry(); geo.setAttribute("position", new THREE.Float32BufferAttribute(p, 3));
+    scene.add(new THREE.Points(geo, new THREE.PointsMaterial({ color: 0xe8ecf3, size: 0.25, fog: false })));
+  }
+}
+
 function buildCourse() {
   const { nx, nz, cell, heights, cup } = course;
+  const sc = window.ptcScene(course.level);
+  setScenery(sc);
   const H = (i, k) => heights[k * (nx + 1) + i];
   const L = nx * cell, W = nz * cell;
   sun.target.position.set(L / 2, 0, W / 2);
@@ -2668,7 +2821,7 @@ function buildCourse() {
 
   // The green, as the canister meshes it: two triangles a cell, the cup cell open.
   const pos = [], col = [], idx = [];
-  const light = new THREE.Color(0x3a9a62), dark = new THREE.Color(0x2f8656);
+  const light = new THREE.Color(LOOK[sc.name][3]), dark = new THREE.Color(LOOK[sc.name][4]);
   for (let k = 0; k <= nz; k++) for (let i = 0; i <= nx; i++) {
     pos.push(i * cell, H(i, k), k * cell);
     const c = Math.floor(i / 4) % 2 ? light : dark; // mowing stripes
@@ -2708,7 +2861,7 @@ function buildCourse() {
   for (const o of course.obstacles) {
     if (o.kind === "block") {
       const hh = 2 * o.half_y + 0.6;
-      const m = new THREE.Mesh(new THREE.BoxGeometry(2 * o.half_x, hh, 2 * o.half_z), new THREE.MeshStandardMaterial({ color: 0xb98a56, roughness: 0.6 }));
+      const m = new THREE.Mesh(new THREE.BoxGeometry(2 * o.half_x, hh, 2 * o.half_z), new THREE.MeshStandardMaterial({ color: sc.wood[0], roughness: 0.6 }));
       m.position.set(o.x, o.ground - 0.6 + hh / 2, o.z); m.rotation.y = o.yaw; m.castShadow = m.receiveShadow = true; scene.add(m);
     } else if (o.kind === "bumper") {
       const hh = 2 * o.half_y + 0.6;
@@ -2835,7 +2988,7 @@ for (const [id, v] of [["v-follow", "follow"], ["v-top", "top"]]) $(id).onclick 
 function setStatus(t, isBusy = false) { $("status").textContent = t; $("status").classList.toggle("busy", isBusy); }
 function hud() {
   const date = new Date(course.day * 86400e3).toLocaleDateString([], { month: "short", day: "numeric", timeZone: "UTC" });
-  $("hud").innerHTML = `Hole of <b>${date}</b> · <b>level ${course.level ?? 10}</b> · par <b>${course.par}</b>` + (round ? ` · strokes <b>${round.strokes}</b>` : "");
+  $("hud").innerHTML = `Hole of <b>${date}</b> · <b>level ${course.level ?? 10}</b> · ${window.ptcScene(course.level).name.toLowerCase()} · par <b>${course.par}</b>` + (round ? ` · strokes <b>${round.strokes}</b>` : "");
 }
 function renderBoard(lb) {
   $("lb-stats").textContent = `${lb.played} played · ${lb.holed} holed${lb.aces ? ` · ${lb.aces} ace${lb.aces > 1 ? "s" : ""}` : ""}`;
@@ -2898,6 +3051,7 @@ async function start() {
   $("start").disabled = true;
   setStatus("Creating your round on-chain…", true);
   try {
+    window.ptcName.set($("name").value);
     round = await call("POST", "/api/minigolf/round", $("name").value + "\n" + level);
     key = round.key; store(KEY(round.id), key); store(MINE(round.day, round.level), String(round.id));
     history.replaceState(null, "", "/minigolf/" + round.id);
@@ -2947,7 +3101,7 @@ $("start").onclick = start;
 // Your round for today is remembered in this browser; this starts a fresh one.
 $("again").onclick = $("restart").onclick = () => {
   try { localStorage.removeItem(MINE(course.day, round ? round.level : level)); } catch (e) {}
-  location.href = "/minigolf";
+  location.href = "/minigolf?go=1"; // straight onto the tee: the name is remembered
 };
 
 // Finished results go to the feed unless the player unticks this.
@@ -3011,6 +3165,7 @@ $("copy-btn").onclick = async () => {
 
 // ---------- load ----------
 async function load() {
+  $("name").value = window.ptcName.get();
   const m = location.pathname.match(/^\/minigolf\/(\d+)$/);
   try {
     // Both at once: each is an update call, a second or two on mainnet.
@@ -3028,6 +3183,8 @@ async function load() {
       // Another level is another course: load it fresh.
       window.ptcLadder($("ladder"), "minigolf", MG_LEVELS, () => location.reload());
       $("setup").hidden = false; setStatus("Today's hole is ready. Pick a level, then press Tee off.");
+      // "Play level n" and "New round" tee off straight away.
+      if (new URLSearchParams(location.search).has("go")) { history.replaceState(null, "", "/minigolf"); start(); }
       return;
     }
     round = r.round; key = read(KEY(round.id));
@@ -3148,6 +3305,25 @@ window.ptcLadder = (box, game, describe, onChange) => {
   });
   show(n);
   return { level: () => n, refresh: () => { n = lv.current(); show(n); } };
+};
+// The scenery for a level, the same tiers in every game: sunrise, midday,
+// evening (the original look), sunset and midnight. body: a sun or moon at
+// (x, y) as fractions of the view.
+window.ptcScene = (n) => [
+  { name: "Sunrise", sky: ["#3b5b8c", "#f2a97e"], turf: ["#4fae6e", "#2a6b45"], edge: "#8be0a4", wood: ["#c99a64", "#7a5634"],
+    body: { x: 0.16, y: 0.38, r: 0.035, color: "#ffd9a0" } },
+  { name: "Midday", sky: ["#3f86d1", "#a9d4f5"], turf: ["#43a362", "#1f5a36"], edge: "#86dca0", wood: ["#c99a64", "#7a5634"],
+    body: { x: 0.78, y: 0.16, r: 0.05, color: "#fff4c2" } },
+  { name: "Evening", sky: ["#0f1a2b", "#1b2d44"], turf: ["#2f7d53", "#173a28"], edge: "#5fbf86", wood: ["#b98a56", "#6e4f2e"] },
+  { name: "Sunset", sky: ["#2b1f4a", "#e86a4a"], turf: ["#2d6b47", "#14301f"], edge: "#79c08e", wood: ["#a8774a", "#5e3f22"],
+    body: { x: 0.86, y: 0.36, r: 0.038, color: "#ff9e5e" } },
+  { name: "Midnight", sky: ["#03050c", "#0b1530"], turf: ["#1d4a35", "#0b1d14"], edge: "#3f8f68", wood: ["#8a6a48", "#4a3622"],
+    body: { x: 0.8, y: 0.18, r: 0.028, color: "#dfe6f5" }, stars: true },
+][Math.min(4, Math.floor((Math.max(1, Math.min(20, n || 10)) - 1) / 4))];
+// The player's name, kept in this browser for every game.
+window.ptcName = {
+  get: () => { try { return localStorage.getItem("ptc-name") || ""; } catch (e) { return ""; } },
+  set: (v) => { try { localStorage.setItem("ptc-name", (v || "").trim()); } catch (e) {} },
 };
 try {
   if (!sessionStorage.getItem("ptc-visit")) {

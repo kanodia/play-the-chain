@@ -43,21 +43,17 @@ float MgCourse::cup_rim() const {
   return height(cup_i, cup_k); // the cup sits on a flattened patch
 }
 
-MgCourse mg_course(uint32_t day, int level) {
-  Rng rng(day);
-  MgCourse c;
+// The cup's catch speed for a level. Level 10 keeps the classic 0.6 m/s.
+static void set_level(MgCourse &c, uint32_t day, int level) {
   c.day = day;
   c.level = level;
   if (level < MG_CLASSIC) c.catch_speed = 0.6f + 0.8f * float(MG_CLASSIC - level) / 9.0f; // 1.4 at level 1
   if (level > MG_CLASSIC) c.catch_speed = 0.6f - 0.3f * float(level - MG_CLASSIC) / 10.0f; // 0.3 at 20
-  c.nx = 72; // 18 m
-  c.nz = 24; // 6 m
-  c.cup_i = int(rng.uniform(60, 66));
-  c.cup_k = int(rng.uniform(5, 18));
-  c.tee = {1.0f, 0, (c.nz * c.cell) * 0.5f};
+}
 
-  // Gentle swells, flat at the tee and around the cup.
-  float a = rng.uniform(0.04f, 0.12f), kx = rng.uniform(0.25f, 0.6f), kz = rng.uniform(0.4f, 1.1f);
+// Gentle swells, flat at the tee and around the cup; `steep` scales them.
+static void lay_green(MgCourse &c, Rng &rng, float steep) {
+  float a = rng.uniform(0.04f, 0.12f) * steep, kx = rng.uniform(0.25f, 0.6f), kz = rng.uniform(0.4f, 1.1f);
   float px = rng.uniform(0, 6.28f), pz = rng.uniform(0, 6.28f), tilt = rng.uniform(-0.012f, 0.012f);
   float cx = c.cup_x(), cz = c.cup_z();
   auto raw = [&](float x, float z) { return a * std::sin(kx * x + px) * std::cos(kz * z + pz) + tilt * x; };
@@ -73,21 +69,62 @@ MgCourse mg_course(uint32_t day, int level) {
       c.heights[size_t(k) * (c.nx + 1) + i] = h;
     }
   c.tee.y = tee_h + MG_BALL_RADIUS;
+}
+
+static MgObstacle windmill(const MgCourse &c, Rng &rng, float x) {
+  MgObstacle o;
+  o.kind = MgKind::Windmill;
+  o.x = x;
+  o.z = c.nz * c.cell * 0.5f;
+  o.half_x = 1.4f; o.half_y = 0.12f; o.half_z = 0.06f;
+  o.omega = rng.uniform(1.0f, 2.0f) * (rng.next() % 2 ? 1.0f : -1.0f);
+  return o;
+}
+
+// Above level 10: the windmill turns faster, and bumpers guard the cup, one
+// from level 14, two from 18. Their own generator, so the rest of the hole
+// stays put.
+static void harden(MgCourse &c) {
+  if (c.level <= MG_CLASSIC) return;
+  for (MgObstacle &o : c.obstacles)
+    if (o.kind == MgKind::Windmill) o.omega *= 1.0f + 0.12f * float(c.level - MG_CLASSIC); // 2.2x at 20
+  Rng p(uint64_t(c.day) ^ 0x50524FULL);
+  int guards = c.level >= 18 ? 2 : c.level >= 14 ? 1 : 0;
+  for (int g = 0; g < guards; ++g) {
+    MgObstacle guard;
+    guard.kind = MgKind::Bumper;
+    guard.x = c.cup_x() - p.uniform(0.9f, 1.4f);
+    guard.z = c.cup_z() + (g ? -1.0f : 1.0f) * p.uniform(0.15f, 0.45f);
+    guard.half_x = 0.16f;
+    guard.half_y = 0.15f;
+    c.obstacles.push_back(guard);
+  }
+}
+
+// The first holes: one per day, the same at every level.
+static MgCourse classic_course(uint32_t day, int level) {
+  Rng rng(day);
+  MgCourse c;
+  set_level(c, day, level);
+  c.nx = 72; // 18 m
+  c.nz = 24; // 6 m
+  c.cup_i = int(rng.uniform(60, 66));
+  c.cup_k = int(rng.uniform(5, 18));
+  c.tee = {1.0f, 0, (c.nz * c.cell) * 0.5f};
+  lay_green(c, rng, 1.0f);
+  float cx = c.cup_x();
 
   // Two or three obstacles between 4 m and 2 m short of the cup.
   int n = 2 + int(rng.next() % 2);
-  bool windmill = false;
+  bool has_windmill = false;
   for (int i = 0; i < n; ++i) {
     MgObstacle o;
     o.x = rng.uniform(4.0f, cx - 2.0f);
     o.z = rng.uniform(1.2f, c.nz * c.cell - 1.2f);
     uint32_t pick = rng.next() % 3;
-    if (pick == 2 && !windmill) {
-      windmill = true;
-      o.kind = MgKind::Windmill;
-      o.z = c.nz * c.cell * 0.5f;
-      o.half_x = 1.4f; o.half_y = 0.12f; o.half_z = 0.06f;
-      o.omega = rng.uniform(1.0f, 2.0f) * (rng.next() % 2 ? 1.0f : -1.0f);
+    if (pick == 2 && !has_windmill) {
+      has_windmill = true;
+      o = windmill(c, rng, o.x);
     } else if (pick == 1) {
       o.kind = MgKind::Bumper;
       o.half_x = rng.uniform(0.18f, 0.35f);
@@ -101,25 +138,66 @@ MgCourse mg_course(uint32_t day, int level) {
     }
     c.obstacles.push_back(o);
   }
-  c.par = windmill ? 3 : 2;
-  if (level > MG_CLASSIC) {
-    for (MgObstacle &o : c.obstacles)
-      if (o.kind == MgKind::Windmill) o.omega *= 1.0f + 0.12f * float(level - MG_CLASSIC); // 2.2x at 20
-    // Bumpers guarding the cup: one from level 14, two from 18. Their own
-    // generator, so the rest of the hole is the same at every level.
-    Rng p(uint64_t(day) ^ 0x50524FULL);
-    int guards = level >= 18 ? 2 : level >= 14 ? 1 : 0;
-    for (int g = 0; g < guards; ++g) {
-      MgObstacle guard;
-      guard.kind = MgKind::Bumper;
-      guard.x = cx - p.uniform(0.9f, 1.4f);
-      guard.z = cz + (g ? -1.0f : 1.0f) * p.uniform(0.15f, 0.45f);
-      guard.half_x = 0.16f;
-      guard.half_y = 0.15f;
-      c.obstacles.push_back(guard);
-    }
-  }
+  c.par = has_windmill ? 3 : 2;
+  harden(c);
   return c;
+}
+
+// How many obstacles a level gets: one at the start, up to four; from level
+// 18 the two bumpers by the cup take the place of one.
+static int obstacle_count(int level) {
+  return level <= 3 ? 1 : level <= 8 ? 2 : level <= 14 ? 3 : level <= 17 ? 4 : 3;
+}
+
+// Every level of every day is its own green. Higher levels get bigger
+// swells, more obstacles, and a windmill from level 5.
+static MgCourse varied_course(uint32_t day, int level) {
+  Rng rng((uint64_t(day) << 8) ^ uint64_t(level) ^ 0x4D494E49ULL);
+  MgCourse c;
+  set_level(c, day, level);
+  const float t = float(level - 1) / float(MG_MAX_LEVEL - 1); // 0 at level 1, 1 at level 20
+  c.nx = 72;
+  c.nz = 24;
+  c.cup_i = int(rng.uniform(56, 66));
+  c.cup_k = int(rng.uniform(4, 19));
+  c.tee = {1.0f, 0, (c.nz * c.cell) * 0.5f};
+  lay_green(c, rng, 0.6f + 1.0f * t);
+  float cx = c.cup_x();
+
+  // One obstacle in each stretch between 4 m and 2 m short of the cup, so they
+  // never pile up; the windmill, when there is one, takes a stretch of its own.
+  int n = obstacle_count(level);
+  int mill = level >= 5 ? int(rng.next() % uint32_t(n)) : -1;
+  const float lo = 4.0f, span = (cx - 2.0f - lo) / float(n);
+  for (int i = 0; i < n; ++i) {
+    float x = rng.uniform(lo + span * i + 0.3f, lo + span * (i + 1) - 0.3f);
+    if (i == mill) {
+      c.obstacles.push_back(windmill(c, rng, x));
+      continue;
+    }
+    MgObstacle o;
+    o.x = x;
+    o.z = rng.uniform(1.2f, c.nz * c.cell - 1.2f);
+    if (rng.next() % 2) {
+      o.kind = MgKind::Bumper;
+      o.half_x = rng.uniform(0.18f, 0.3f) + 0.1f * t;
+      o.half_y = 0.15f;
+    } else {
+      o.kind = MgKind::Block;
+      o.half_x = rng.uniform(0.15f, 0.5f);
+      o.half_z = rng.uniform(0.15f, 0.6f) + 0.5f * t;
+      o.half_y = 0.15f;
+      o.yaw = rng.uniform(-0.8f, 0.8f);
+    }
+    c.obstacles.push_back(o);
+  }
+  c.par = 2 + (mill >= 0) + (level >= 15); // from 15, four obstacles or two of them by the cup
+  harden(c);
+  return c;
+}
+
+MgCourse mg_course(uint32_t day, int level, bool varied) {
+  return varied ? varied_course(day, level) : classic_course(day, level);
 }
 
 float mg_phase(uint32_t day, size_t stroke) {
@@ -263,7 +341,7 @@ MgShot mg_shoot(const MgCourse &c, MgPoint from, float yaw, float power, float p
 }
 
 std::string mg_course_json(const MgCourse &c) {
-  char buf[200];
+  char buf[512];
   std::snprintf(buf, sizeof buf,
                 "{\"day\":%u,\"level\":%d,\"par\":%d,\"nx\":%d,\"nz\":%d,\"cell\":%.3f,\"cup\":{\"i\":%d,\"k\":%d,\"rim\":%.4f,\"depth\":%.3f},"
                 "\"tee\":{\"x\":%.3f,\"y\":%.4f,\"z\":%.3f},\"ball_radius\":%.3f,\"steps_per_frame\":%d,\"heights\":[",

@@ -22,7 +22,7 @@ struct MgObstacle {
   float omega = 0; // Windmill, rad/s about y
 };
 
-// Levels 1..20 of the same daily hole, as in Chain Golf: 10 is the classic.
+// Levels 1..20, as in Chain Golf. Each level of a day is its own green.
 constexpr int MG_CLASSIC = 10, MG_MAX_LEVEL = 20;
 
 struct MgCourse {
@@ -58,7 +58,9 @@ constexpr int MG_STEPS_PER_FRAME = 4; // 120 Hz physics, 30 frames a second
 
 // Below level 10 the cup holds faster balls; above it only slower ones, the
 // windmill turns faster, and from level 14 bumpers guard the cup.
-MgCourse mg_course(uint32_t day, int level = MG_CLASSIC);
+// varied: a green of its own for each level. Rounds from before played the
+// classic green, the same at every level, and keep it.
+MgCourse mg_course(uint32_t day, int level = MG_CLASSIC, bool varied = true);
 
 // The windmills' angle at the start of a shot: fixed by the day and the
 // stroke, so a replay sees exactly the same blades.
