@@ -7,6 +7,8 @@ void canister_post_upgrade() WASM_SYMBOL_EXPORTED("canister_post_upgrade");
 
 void bestmove() WASM_SYMBOL_EXPORTED("canister_update bestmove");
 void new_game() WASM_SYMBOL_EXPORTED("canister_update new_game");
+// The analytics counters of the last n days, for the controllers only.
+void stats() WASM_SYMBOL_EXPORTED("canister_query stats");
 
 // GET / serves the board; POST /move is upgraded to an update call that runs
 // the search.

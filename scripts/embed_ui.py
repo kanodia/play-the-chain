@@ -36,11 +36,31 @@ OG_TAGS = """<meta property="og:type" content="website">
 <meta name="twitter:description" content="__OG_DESC__">
 <meta name="twitter:image" content="__OG_IMAGE__">
 """
+# Analytics: ptcTrack(event) counts a funnel step in the canister (POST
+# /api/event, daily counters only) and in Umami, when UMAMI_ID is set. Umami
+# keeps no cookies; data-domains keeps local test networks out of it. Once a
+# visit, the page says whether this browser has been here before.
+UMAMI_ID = ""
+TRACK = """<script>
+window.ptcTrack = (name, data) => {
+  try { fetch("/api/event", { method: "POST", body: name, keepalive: true }).catch(() => {}); } catch (e) {}
+  try { window.umami && window.umami.track(name, data); } catch (e) {}
+};
+try {
+  if (!sessionStorage.getItem("ptc-visit")) {
+    sessionStorage.setItem("ptc-visit", "1");
+    const seen = localStorage.getItem("ptc-seen");
+    localStorage.setItem("ptc-seen", "1");
+    window.ptcTrack(seen ? "visit_return" : "visit_new");
+  }
+} catch (e) {}
+</script>
+""" + (f'<script defer src="https://cloud.umami.is/script.js" data-website-id="{UMAMI_ID}" data-domains="ne5l7-xiaaa-aaaaj-qsm3q-cai.icp0.io"></script>\n' if UMAMI_ID else "")
 FABRIC_LINK = '<link rel="stylesheet" href="/fabric.css'
 for name, file in PAGES.items():
     html = (ROOT / "src/ui" / file).read_text(encoding="utf-8")
     assert html.count(FABRIC_LINK) == 1, f"{file} needs the fabric link once"
-    html = html.replace(FABRIC_LINK, OG_TAGS + FABRIC_LINK).replace("__FABRIC_V__", version)
+    html = html.replace(FABRIC_LINK, OG_TAGS + TRACK + FABRIC_LINK).replace("__FABRIC_V__", version)
     assert ')HTML"' not in html, f"{file} must not contain the raw-string delimiter"
     out += f'\nstatic const char {name}[] = R"HTML({html})HTML";\n'
     print(f"{file}: {len(html.encode())} bytes of HTML")

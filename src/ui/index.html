@@ -394,6 +394,7 @@ function showFuelIfEmpty(e) {
 }
 
 async function refuel() {
+  window.ptcTrack?.("refuel_click");
   const btn = $("refuel");
   btn.disabled = true;
   $("fuel-msg").textContent = "Asking the ICP ledger and the cycles minting canister…";
@@ -508,7 +509,12 @@ function afterUpdate() {
   $("share").innerHTML = `<a href="/game/${game.id}">Game #${game.id}</a> · anyone can replay it`;
   updateShare();
   // The game just ended, in this visit: post it, unless the player said not to.
-  if (key && lastStatus === "playing" && game.status !== "playing" && autoPost()) postFeed();
+  if (key && lastStatus === "playing" && game.status !== "playing") {
+    const won = game.status === "checkmate" && game.moves.length && game.moves[game.moves.length - 1].by !== "engine";
+    window.ptcTrack?.("chess_end", { result: won ? "win" : game.status === "checkmate" ? "loss" : "draw", moves: Math.ceil(plies() / 2) });
+    if (won) window.ptcTrack?.("chess_win");
+    if (autoPost()) postFeed();
+  }
   lastStatus = game.status;
   refreshInfo();
   render();
@@ -531,8 +537,8 @@ function updateShare() {
   $("share-row").hidden = !game;
   if (!game) return;
   const url = shareUrl(), text = shareText();
-  $("share-x").href = "https://x.com/intent/post?text=" + encodeURIComponent(text) + "&url=" + encodeURIComponent(url);
-  $("share-wa").href = "https://wa.me/?text=" + encodeURIComponent(text + " " + url);
+  $("share-x").href = "https://x.com/intent/post?text=" + encodeURIComponent(text) + "&url=" + encodeURIComponent(url + "?via=x");
+  $("share-wa").href = "https://wa.me/?text=" + encodeURIComponent(text + " " + url + "?via=wa");
   // The native share sheet (phones, Safari) where there is one; otherwise copying is the main action.
   $("share-btn").hidden = !navigator.share;
   // Your own game, once it's over or has some moves in it, can go to the feed.
@@ -556,12 +562,13 @@ async function postFeed() {
   try {
     await call("POST", "/api/feed", `chess\n${game.id}\n${key}\n${$("player-name").value}`);
     $("feed-row").innerHTML = `<a href="/feed">📣 Posted · see the feed ▸</a>`;
+    window.ptcTrack?.("feed_post", { kind: "chess" });
   } catch (e) { b.disabled = false; b.textContent = "📣 Post to feed"; setStatus("Could not post: " + e.message); }
 }
 
 async function copyLink() {
   const btn = $("copy-btn");
-  try { await navigator.clipboard.writeText(shareUrl()); btn.textContent = "Copied ✓"; }
+  try { await navigator.clipboard.writeText(shareUrl() + "?via=copy"); btn.textContent = "Copied ✓"; window.ptcTrack?.("share", { game: "chess", to: "copy" }); }
   catch (e) { $("share-row").querySelector(".hint").textContent = shareUrl(); return; }
   setTimeout(() => { btn.textContent = "Copy link"; }, 1600);
 }
@@ -580,6 +587,7 @@ async function start() {
     game = await call("POST", "/api/game", $("depth").value + "\n" + $("side").value);
     key = game.key; store(game.id, key);
     history.replaceState(null, "", "/game/" + game.id);
+    window.ptcTrack?.("chess_start", { level: $("depth").selectedOptions[0]?.textContent.trim() });
     view = null;
     $("setup").hidden = true;
     afterUpdate();
@@ -649,6 +657,10 @@ $("start").onclick = start;
 $("refuel").onclick = refuel;
 $("share-btn").onclick = share;
 $("post-feed").onclick = postFeed;
+// Which shares bring people back: the link says where it was shared.
+for (const [id, to] of [["share-x", "x"], ["share-wa", "wa"]])
+  $(id).addEventListener("click", () => window.ptcTrack?.("share", { game: "chess", to }));
+
 $("copy-btn").onclick = copyLink;
 load();
 </script>

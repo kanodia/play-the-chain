@@ -95,6 +95,7 @@ function card(p, fresh) {
     b.onclick = async () => {
       if (mine(p.id).includes(k)) return;
       remember(p.id, [...mine(p.id), k]);
+      window.ptcTrack?.("feed_react", { kind: p.kind });
       b.classList.add("on"); b.textContent = `${EMOJI[k]} ${n + 1}`;
       try { const r = await call("POST", `/api/feed/${p.id}/react`, String(k)); b.textContent = `${EMOJI[k]} ${r.react[k]}`; } catch (e) {}
     };
@@ -106,7 +107,8 @@ function card(p, fresh) {
   }
   const share = document.createElement("a");
   share.target = "_blank"; share.rel = "noopener"; share.textContent = "Share on X";
-  share.href = "https://x.com/intent/post?text=" + encodeURIComponent(p.title + " · verified on-chain") + "&url=" + encodeURIComponent(location.origin + p.url);
+  share.href = "https://x.com/intent/post?text=" + encodeURIComponent(p.title + " · verified on-chain") + "&url=" + encodeURIComponent(location.origin + p.url + (p.url.includes("#") ? "" : "?via=x"));
+  share.addEventListener("click", () => window.ptcTrack?.("share", { game: p.kind, to: "x" }));
   actions.append(share);
   el.append(icon, title, meta, actions);
   return el;
