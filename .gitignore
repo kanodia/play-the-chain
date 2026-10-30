@@ -5,3 +5,4 @@ build-library/
 .dfx/
 build-library-native/
 __pycache__/
+.venv/

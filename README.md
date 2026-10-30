@@ -1,94 +1,157 @@
 # Play the Chain
 
-**Play chess against Stockfish running inside an Internet Computer canister.**
+**Games whose every move runs inside one Internet Computer canister, written in C++.**
 
 ▶ **https://ne5l7-xiaaa-aaaaj-qsm3q-cai.icp0.io**
 
-[Stockfish](https://stockfishchess.org) is the strongest open-source chess
-engine, and has been the top computer chess engine for years. Grandmasters
-use it to analyse their games. It's over 12,000 lines of performance-tuned
-C++, and here the whole engine runs inside a smart contract.
+Famous C++ engines, compiled to WebAssembly with
+[icpp-pro](https://github.com/icppWorld/icpp-pro) and running on-chain. There is
+no server: one canister serves the pages, runs the engines, referees every move
+and stores every game. Each move or shot is computed by all 13 nodes of an
+application subnet and agreed on by consensus.
 
-There is no server. One C++ canister serves the page, referees the game and
-thinks of its moves. Every engine move is computed by all 13 nodes of an
-application subnet, agreed on by consensus, and written to the canister's
-stable memory, so every game has a permanent link anyone can replay.
-
-The page has an **on-chain view** that explains each move twice, side by
-side: in plain words, and as what actually runs.
+| | Engine | Page |
+|---|---|---|
+| ♟ Chess against Stockfish | [Stockfish 11](https://stockfishchess.org), GPL-3 | `/chess`, `/game/<id>` |
+| ⛳ Chain Golf, one hole a day | [Box2D 2.4.2](https://box2d.org), MIT | `/golf`, `/golf/<id>` |
+| 🏌 Chain Mini-Golf, 3D (unlisted, in progress) | [Bullet 3.25](https://github.com/bulletphysics/bullet3), zlib | `/minigolf` |
+| 📣 The feed: results players post | | `/feed` |
+| 📊 Every game and what it cost | | `/games` |
 
 ## How it works
 
-- **Stockfish 11** (the last version before neural nets), compiled from C++
-  to wasm with [icpp-pro](https://github.com/icppWorld/icpp-pro) 7.0.0rc4.
-- The IC has no threads, so `SF_NO_THREADS` makes the search run
-  synchronously in the calling message: about 50 guarded lines in
-  `thread.h/.cpp`, `tt.cpp`, `misc.cpp` and `syzygy/tbprobe.cpp`.
-- A search costs about 8–10k wasm instructions per position. Depth 14 takes
-  ~2B instructions, depth 18 ~12–14B, all inside the 40B limit of one
-  message. Every search is capped at 2.5M positions (~25B instructions).
-- The search is deterministic: the same position gives the same move and the
-  same node count on a laptop, a local replica and mainnet.
-- **The canister is the referee.** It checks each move with Stockfish's own
-  move generator and rules on checkmate, stalemate, threefold repetition and
-  the 50-move rule. Games are stored as files in stable memory
-  (ic-wasi-polyfill), so they survive upgrades.
-- **HTTP only, no agent library.** Every route is upgraded to
-  `http_request_update`. Update replies go through consensus and are signed
-  by the subnet, so the gateway accepts them without response certification.
-- **Reverse gas, with a daily allowance.** Players need no wallet; the
-  canister pays. Up to 200B instructions a day (~$0.10) moves are full
-  strength, then quick depth-8 replies until 250B, then HTTP 429 until
-  00:00 UTC.
+- **The canister is the referee.** The browser sends only a move, or an angle
+  and a power. The canister checks it, computes the reply or simulates the
+  shot, stores it, and returns the result to animate. Scores can't be faked:
+  `GET /api/golf/round/<id>/shot/<n>` simulates any stored shot again and says
+  whether it lands in exactly the same place (wasm floats are deterministic).
+- **Stockfish without threads.** `SF_NO_THREADS` runs the search synchronously
+  in the calling message (about 50 guarded lines in `src/sf`). A depth-18 move
+  is ~12B instructions, inside the 40B per-message limit.
+- **Box2D and Bullet are vendored unchanged** (Bullet without the modules a
+  canister doesn't need). Golf runs at 60 Hz, mini-golf at 120 Hz with CCD.
+- **Storage:** every game, round and post is a small file in stable memory
+  through ic-wasi-polyfill (`/game_<id>.txt`, `/golf_round_<id>.txt`,
+  `/feed_<id>.txt`, …), so everything survives upgrades.
+- **HTTP only.** Every route is upgraded to `http_request_update`, so replies
+  go through consensus. Pages, three.js, the WebGL backdrop (`fabric.js`) and
+  the link-preview images are all served by the canister.
+- **Reverse gas with a daily budget.** Players need no wallet. Up to 80B
+  instructions a day are full strength, then lighter searches until 100B, then
+  HTTP 429 until 00:00 UTC. Engine moves also pause before the freezing
+  threshold, so the canister never freezes.
+- **A shared fuel tank.** Anyone can send ICP to the canister and press Refuel.
+  The canister pays 10% to the developer's account (`DEV_ACCOUNT` in
+  `src/fuel.cpp`, said on the page), sends the rest to the cycles minting
+  canister and calls `notify_top_up`. The ledger arguments are built as raw
+  Candid by `scripts/fuel_args.py`.
+- **The feed.** Only the browser holding a round's or game's key can post it,
+  once. A post stores only which result it is: the headline is written from
+  the canister's own record when the feed is read.
 
-## Chain Golf
+## Repository layout
 
-`/golf` is one hole a day, and every shot is simulated by
-[Box2D](https://box2d.org) 2.4.2 (C++, MIT, vendored unchanged in `src/box2d`)
-inside the canister. The browser sends only an angle and a power; the canister
-runs the physics at 60 Hz until the ball stops, sinks or goes out, stores the
-shot with its exact inputs, and returns the path to animate. So a score can't
-be faked, and `GET /api/golf/round/<id>/shot/<n>` simulates any shot again and
-reports whether it lands in exactly the same place. The hole of the day is
-generated from the date, so everybody plays the same one. Shots share the
-daily budget and the fuel tank with the chess.
+```
+src/stockfish.cpp      canister entry points, HTTP routes, APIs, feed, link previews
+src/engine.*           Stockfish wrapper: search, game state
+src/games.*            chess games in stable memory
+src/golf*.{h,cpp}      Chain Golf: course generation, Box2D simulation, rounds
+src/minigolf*.{h,cpp}  3D mini-golf on Bullet
+src/fuel.* candid_reply.*  the fuel tank: ledger + CMC calls, reply parsing
+src/feed.*             feed storage
+src/ui/*.html          the pages; fabric.js/.css: the shared WebGL backdrop
+src/ui/og/*.jpg        link-preview cards (1200x630)
+src/ui_html.h          GENERATED from src/ui by scripts/embed_ui.py
+src/sf src/box2d src/bullet   vendored engines
+native/                native builds and solvability tests for the golf holes
+playground/            a smaller test build (no Stockfish, extra /api/test/* routes)
+icp-local/             local test network with both builds, on port 8000
+scripts/embed_ui.py    embeds the pages, scripts and images into src/ui_html.h
+scripts/fuel_args.py   Candid bytes for the ledger calls in src/fuel.cpp
+```
+
+## Build and run locally
+
+You need Python 3.11+, [icp-cli](https://github.com/dfinity/icp-cli) 1.7+
+(`brew install icp-cli`), and icpp-pro, which installs wasi-sdk for you.
+
+```bash
+python3 -m venv .venv && source .venv/bin/activate
+pip install icpp-pro==7.0.0rc4
+
+python3 -I scripts/embed_ui.py      # after any change in src/ui
+icpp build-wasm                     # -> build/stockfish.wasm
+
+cd icp-local
+icp network start -d
+icp deploy stockfish                # http://stockfish.local.localhost:8000/
+```
+
+The local network runs the same wasm as mainnet. It includes an ICP ledger, so
+you can check hand-built Candid against a real one:
+`icp canister call ryjl3-tyaaa-aaaaa-aaaba-cai transfer <hex> --args-format hex`.
+Refuel itself only works on mainnet: the fuel accounts are set for the mainnet
+canister. dfx 0.30–0.33's local replica can't run this wasm (it imports newer
+system calls); use icp-cli.
+
+Optional:
+
+```bash
+icp deploy pg                       # test build, after building playground/:
+                                    #   cd playground && icpp build-wasm
+icpp build-native && icpp run-native  # the engine natively, timed
+```
 
 ## API
 
 | Route | |
 |---|---|
-| `GET /`, `GET /game/<id>` | the page |
-| `GET /api/info` | canister, subnet, node count, today's budget |
-| `GET /api/game/<id>` | a game, with a receipt for every engine move |
+| `GET /api/info` | canister, subnet, node count, today's budget, fuel tank |
+| `GET /api/games` | every chess game and its cost |
 | `POST /api/game` | body `<depth 1-20>\n<w\|b>`: a new game and its key |
+| `GET /api/game/<id>` | a game, with a receipt for every engine move |
 | `POST /api/game/<id>/move` | body `<key>\n<uci move>`: your move and the reply |
+| `GET /api/golf/today` | today's hole and leaderboard |
+| `POST /api/golf/round` | body `<name>`: a new round and its key |
+| `POST /api/golf/round/<id>/shot` | body `<key>\n<angle>\n<power>`: a shot and its path |
+| `GET /api/golf/round/<id>[/shot/<n>]` | a round; or shot n simulated again, with `matches` |
+| `/api/minigolf/...` | the same shape as golf |
+| `GET /api/feed?before=<id>` | the 30 newest posts |
+| `POST /api/feed` | body `<golf\|chess>\n<id>\n<key>\n<name>`: post your result |
+| `POST /api/feed/<id>/react` | body `0`, `1` or `2` |
+| `POST /api/fuel` | turn ICP on the canister's account into cycles |
 
 The Candid method `bestmove : (fen : text, depth : nat8) -> (SearchResult)`
 searches any position, under the same daily budget.
 
+## Contributing and deploying
+
+Fork, branch, and open a pull request; describe what you changed and how you
+tested it locally. Only the maintainer's keys control the mainnet canister, so
+deploys are done by the maintainer after review:
+
+```bash
+icpp build-wasm
+dfx canister install stockfish --network ic --mode upgrade --wasm build/stockfish.wasm --identity <controller>
+```
+
+Upgrades must keep existing data readable: games, rounds and posts are plain
+text files, so add new fields at the end of a line and give them defaults
+when they're missing (see `game_load` and `fuel_log`).
+
 ## Verify the running code
 
 ```bash
-icpp build-wasm                     # icpp-pro 7.0.0rc4, wasi-sdk 25
+icpp build-wasm                     # icpp-pro 7.0.0rc4
 shasum -a 256 build/stockfish.wasm
 dfx canister info ne5l7-xiaaa-aaaaj-qsm3q-cai --network ic   # module hash
 ```
 
-The deployed module hash is
-`fabfccc317f5dc9418f546cca2d25beae111d4f10ff3a7f2094ddb1d1082a631`.
-
-## Build and run locally
-
-```bash
-pip install icpp-pro==7.0.0rc4
-python3 -I scripts/embed_ui.py      # after editing src/ui/index.html
-icpp build-wasm
-icp network start -d && icp deploy  # then open the URL it prints
-icpp build-native && icpp run-native  # the engine natively, timed
-```
+The two hashes match when you build the commit that is deployed.
 
 ## Licence
 
-GPL-3.0, like Stockfish. See `LICENSE`. Stockfish is © the Stockfish
-authors; this repository vendors the Stockfish 11 source in `src/sf` with
-the changes described above.
+GPL-3.0, like Stockfish. See `LICENSE`. This repository vendors Stockfish 11
+(`src/sf`, GPL-3, with the changes described above), Box2D 2.4.2
+(`src/box2d`, MIT), Bullet Physics 3.25 (`src/bullet`, zlib) and three.js
+0.160.0 (`src/ui/vendor`, MIT), each under its own licence.
