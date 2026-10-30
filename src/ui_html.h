@@ -763,7 +763,9 @@ static const char UI_HTML[] = R"HTML(<!doctype html>
   button.primary { background: var(--accent); color: #062a20; border-color: var(--accent); font-weight: 600; }
   button:disabled { opacity: .5; cursor: default; }
   .share { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-top: 12px; }
-  #post-name { font: inherit; color: var(--text); background: #0f1219; border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; width: 190px; }
+  #player-name { font: inherit; color: var(--text); background: #0f1219; border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; width: 170px; }
+  .auto { display: flex; align-items: center; gap: 6px; font-size: 13.5px; color: var(--muted); cursor: pointer; flex-basis: 100%; }
+  .auto input { accent-color: var(--accent); width: 16px; height: 16px; }
   .share a.btn { color: var(--text); background: #1c2230; border: 1px solid var(--line); border-radius: 8px;
     padding: 8px 12px; text-decoration: none; font-size: 14px; }
   .share a.btn:hover { border-color: var(--accent); }
@@ -890,7 +892,9 @@ static const char UI_HTML[] = R"HTML(<!doctype html>
             <option value="w">I play white</option>
             <option value="b">I play black</option>
           </select>
+          <input id="player-name" type="text" maxlength="16" placeholder="Your name (optional)" aria-label="Your name for the feed">
           <button id="start" class="primary">Start a game</button>
+          <label class="auto"><input type="checkbox" id="autopost" checked> 📣 Post my result to the feed</label>
         </div>
         <div id="spectator" class="banner" hidden></div>
         <div id="share-row" class="share" hidden>
@@ -901,7 +905,6 @@ static const char UI_HTML[] = R"HTML(<!doctype html>
           <span class="hint">Anyone with the link can replay every move from the canister.</span>
         </div>
         <div id="feed-row" class="share" hidden>
-          <input id="post-name" type="text" maxlength="16" placeholder="Your name (optional)" aria-label="Your name for the feed">
           <button id="post-feed">📣 Post to feed</button>
         </div>
       </div>
@@ -1211,6 +1214,7 @@ async function call(method, path, body) {
   return data;
 }
 
+let lastStatus = null; // the game's status at the previous update, to spot its end
 function afterUpdate() {
   clearInterval(ticker);
   window.Fabric?.consensus();
@@ -1220,6 +1224,9 @@ function afterUpdate() {
   setStatus(statusText());
   $("share").innerHTML = `<a href="/game/${game.id}">Game #${game.id}</a> · anyone can replay it`;
   updateShare();
+  // The game just ended, in this visit: post it, unless the player said not to.
+  if (key && lastStatus === "playing" && game.status !== "playing" && autoPost()) postFeed();
+  lastStatus = game.status;
   refreshInfo();
   render();
 }
@@ -1249,12 +1256,22 @@ function updateShare() {
   $("feed-row").hidden = !(key && (game.status !== "playing" || plies() >= 10));
 }
 
+// Finished results go to the feed unless the player unticks this; the choice
+// is remembered in this browser.
+const autoPost = () => $("autopost").checked;
+try { $("autopost").checked = localStorage.getItem("ptc-autopost") !== "0"; } catch (e) {}
+$("autopost").onchange = () => { try { localStorage.setItem("ptc-autopost", autoPost() ? "1" : "0"); } catch (e) {} };
+// The name for the feed, remembered in this browser.
+try { $("player-name").value = localStorage.getItem("ptc-name") || ""; } catch (e) {}
+$("player-name").onchange = () => { try { localStorage.setItem("ptc-name", $("player-name").value); } catch (e) {} };
+
 // Posts this game to the feed; the canister writes the headline.
 async function postFeed() {
   const b = $("post-feed");
+  if (!b) return;
   b.disabled = true; b.textContent = "Posting…";
   try {
-    await call("POST", "/api/feed", `chess\n${game.id}\n${key}\n${$("post-name").value}`);
+    await call("POST", "/api/feed", `chess\n${game.id}\n${key}\n${$("player-name").value}`);
     $("feed-row").innerHTML = `<a href="/feed">📣 Posted · see the feed ▸</a>`;
   } catch (e) { b.disabled = false; b.textContent = "📣 Post to feed"; setStatus("Could not post: " + e.message); }
 }
@@ -1650,6 +1667,8 @@ static const char GOLF_HTML[] = R"HTML(<!doctype html>
   }
   * { box-sizing: border-box; }
   [hidden] { display: none !important; }
+  .auto { display: flex; align-items: center; gap: 6px; font-size: 13.5px; color: var(--muted); cursor: pointer; flex-basis: 100%; }
+  .auto input { accent-color: var(--accent); width: 16px; height: 16px; }
   body { margin: 0; background: var(--bg); color: var(--text);
     font: 15px/1.45 ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif; }
   a { color: var(--accent); }
@@ -1733,6 +1752,7 @@ static const char GOLF_HTML[] = R"HTML(<!doctype html>
         <div id="setup" class="row" hidden>
           <input id="name" type="text" maxlength="16" placeholder="Your name (optional)" aria-label="Your name for the leaderboard">
           <button id="start" class="primary">Tee off</button>
+          <label class="auto"><input type="checkbox" id="autopost" checked> 📣 Post my result to the feed</label>
         </div>
         <div id="controls" hidden>
           <div class="aim">
@@ -1972,6 +1992,7 @@ async function shoot() {
     window.Fabric?.consensus();
     await animate(r.frames);
     round = r.round;
+    var finishedNow = round.status !== "playing";
     const s = round.shots[round.shots.length - 1];
     $("receipt").hidden = false;
     $("receipt").innerHTML = `<dt>shot</dt><dd>${s.angle.toFixed(1)}° · ${s.power.toFixed(0)}% · ${s.how}</dd>
@@ -1982,6 +2003,7 @@ async function shoot() {
   } catch (e) { $("thinking").hidden = true; window.Fabric?.think(false); setStatus("The canister refused: " + e.message); }
   busy = false; $("shoot").disabled = false;
   if (round) after();
+  if (finishedNow && autoPost()) $("post-feed")?.click();
 }
 $("shoot").onclick = shoot;
 // Your round for today is remembered in this browser; this starts a fresh one.
@@ -2016,9 +2038,16 @@ async function replay() {
 }
 $("verify").onclick = replay;
 
+// Finished results go to the feed unless the player unticks this; the choice
+// is remembered in this browser.
+const autoPost = () => $("autopost").checked;
+try { $("autopost").checked = localStorage.getItem("ptc-autopost") !== "0"; } catch (e) {}
+$("autopost").onchange = () => { try { localStorage.setItem("ptc-autopost", autoPost() ? "1" : "0"); } catch (e) {} };
+
 // Posts this finished round to the feed; the canister writes the headline.
 $("post-feed").onclick = async () => {
   const b = $("post-feed");
+  if (!b) return;
   b.disabled = true; b.textContent = "Posting…";
   try {
     await call("POST", "/api/feed", `golf\n${round.id}\n${key}\n`);
